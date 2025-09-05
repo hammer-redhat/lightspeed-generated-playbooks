@@ -17,7 +17,7 @@ The **lightspeed-generated-playbooks** repository houses Ansible playbooks autom
 ---
 
 ## 🚀 Supported Use Cases
-
+![Ansible Lightspeed Playbooks](files/graphic.png)
 This repository provides playbooks for the following platforms and services:
 
 - **Databases**
