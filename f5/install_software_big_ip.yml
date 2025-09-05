@@ -1,0 +1,31 @@
+---
+- name: BIG-IP Software Install
+  hosts: all
+  connection: local
+  tasks:
+    - name: Add a virtual server
+      f5networks.f5_modules.bigip_virtual_server:
+        name: vip
+        destination: "{{ virtual_server_ip }}"
+        port: "443"
+        enabled_vlans: all
+        all_profiles:
+          - http
+          - clientssl
+        pool: http_pool
+        snat: Automap
+
+    - name: Ensure an existing image is activated in specified volume
+      f5networks.f5_bigip.bigip_software_image:
+        image: BIGIP-13.1.0.50-0.0.166.ALL-VELOS.qcow2
+        volume: "{{ volume_name }}"
+        state: present
+
+    - name: Check for installation progress
+      f5networks.f5_bigip.bigip_software_install: {}
+      register: task
+
+    - name: Wait for 5 minutes if device is restarting services
+      ansible.builtin.pause:
+        minutes: 5
+      when: task.changed and task.reboot

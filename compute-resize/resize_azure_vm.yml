@@ -1,0 +1,11 @@
+---
+- name: Resize Azure Virtual Machine
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Resize Azure Virtual Machine
+      azure.azcollection.azure_rm_virtualmachine:
+        resource_group: resourcegroupone
+        name: testvm
+        vm_size: "{{ desired_vm_size }}"
+        image: "{{ image_name }}"
