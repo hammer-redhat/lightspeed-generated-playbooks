@@ -1,0 +1,12 @@
+---
+- name: Create an API product in Apigee.
+  hosts: localhost
+  tasks:
+    - name: Create an API product
+      apigee.cloud.api_product:
+        name: my-api-product
+        display_name: My API Product
+        organization: my-organization
+        environments:
+          - test
+          - prod
