@@ -1,0 +1,15 @@
+---
+# DataPower Inventory
+all:
+  children:
+    datapower_servers:
+      hosts:
+        datapower-01:
+          ansible_host: "150.240.162.117"
+          datapower_host_override: "150.240.162.117"
+          datapower_user_override: "admin"
+          datapower_domain_override: "default"
+      vars:
+        # Common DataPower settings
+        datapower_connection_timeout: 30
+        datapower_retry_attempts: 3

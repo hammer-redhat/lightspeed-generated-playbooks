@@ -1,0 +1,25 @@
+---
+# DataPower Web Gateway Configuration Variables
+
+# Web Gateway Basic Configuration
+gateway_name: "my-web-gateway"
+gateway_domain: "default"
+gateway_state: "enabled"
+
+# Network Configuration
+gateway_port: 8080
+gateway_interface: "0.0.0.0"
+
+# Backend Configuration
+backend_url: "http://backend-server:8080"
+backend_timeout: 30
+
+# DataPower Connection Settings
+datapower_user: "admin"
+datapower_password: "{{ vault_datapower_password }}"
+datapower_domain: "default"
+
+# DataPower Server Settings
+datapower_host_01: "150.240.162.117"
+datapower_user_01: "admin"
+datapower_domain_01: "default"
