@@ -42,7 +42,7 @@ You can override any of these variables using `-e` flags:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `datapower_host` | `150.240.162.117` | DataPower server hostname or IP |
+| `datapower_host` | `1.2.3.4` | DataPower server hostname or IP |
 | `datapower_user` | `hammer` | DataPower username |
 | `datapower_rest_port` | `5554` | REST API port |
 | `datapower_domain` | `default` | DataPower domain name |
