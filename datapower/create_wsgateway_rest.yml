@@ -4,7 +4,7 @@
   gather_facts: false
   vars:
     # DataPower Connection Settings
-    datapower_host: "150.240.162.117"
+    datapower_host: "1.2.3.4"
     datapower_user: "hammer"
 #    datapower_password:
     datapower_rest_port: 5554
