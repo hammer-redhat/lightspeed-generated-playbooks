@@ -1,0 +1,155 @@
+---
+- name: Create WSGateway using DataPower REST API
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # DataPower Connection Settings
+    datapower_host: "150.240.162.117"
+    datapower_user: "hammer"
+#    datapower_password:
+    datapower_rest_port: 5554
+    datapower_domain: "default"
+    
+    # WSGateway Configuration
+    wsgateway_name: "{{ wsgateway_name_override | default('my-ws-gateway') }}"
+    wsgateway_port: "{{ wsgateway_port_override | default(8082) }}"
+    wsgateway_address: "{{ wsgateway_address_override | default('0.0.0.0') }}"
+    
+    # HTTP Handler Configuration
+    http_handler_name: "{{ wsgateway_name }}-handler"
+
+  tasks:
+    - name: Test DataPower REST API connectivity
+      uri:
+        url: "https://{{ datapower_host }}:{{ datapower_rest_port }}/mgmt/config/{{ datapower_domain }}"
+        method: GET
+        user: "{{ datapower_user }}"
+        password: "{{ datapower_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200]
+      register: connectivity_test
+      failed_when: false
+
+    - name: Display connectivity status
+      debug:
+        msg: |
+          DataPower REST API Connectivity: {{ 'SUCCESS' if connectivity_test.status == 200 else 'FAILED' }}
+          {% if connectivity_test.status != 200 %}
+          Error: {{ connectivity_test.msg | default('Unknown error') }}
+          {% endif %}
+
+    - name: Fail if connectivity test failed
+      fail:
+        msg: "Cannot connect to DataPower REST API on port {{ datapower_rest_port }}"
+      when: connectivity_test.status != 200
+
+    - name: Create HTTP Source Protocol Handler
+      uri:
+        url: "https://{{ datapower_host }}:{{ datapower_rest_port }}/mgmt/config/{{ datapower_domain }}/HTTPSourceProtocolHandler"
+        method: POST
+        user: "{{ datapower_user }}"
+        password: "{{ datapower_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          HTTPSourceProtocolHandler:
+            name: "{{ http_handler_name }}"
+            mAdminState: "enabled"
+            LocalAddress: "{{ wsgateway_address }}"
+            Port: "{{ wsgateway_port }}"
+            HTTPVersion: "HTTP/1.1"
+        status_code: [200, 201]
+      register: handler_creation
+      failed_when: false
+
+    - name: Display HTTP Handler creation result
+      debug:
+        msg: |
+          HTTP Handler Creation: {{ 'SUCCESS' if handler_creation.status in [200, 201] else 'FAILED' }}
+          Handler Name: {{ http_handler_name }}
+          {% if handler_creation.status in [200, 201] %}
+          Status: {{ handler_creation.json.status | default('Created') }}
+          {% else %}
+          Error: {{ handler_creation.json.error | default('Unknown error') }}
+          {% endif %}
+
+    - name: Create WSGateway
+      uri:
+        url: "https://{{ datapower_host }}:{{ datapower_rest_port }}/mgmt/config/{{ datapower_domain }}/WSGateway"
+        method: POST
+        user: "{{ datapower_user }}"
+        password: "{{ datapower_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          WSGateway:
+            name: "{{ wsgateway_name }}"
+            mAdminState: "enabled"
+            FrontProtocol: "{{ http_handler_name }}"
+            XMLManager: "default"
+            PolicyAttachments: "default"
+        status_code: [200, 201]
+      register: wsgateway_creation
+      failed_when: false
+
+    - name: Display WSGateway creation result
+      debug:
+        msg: |
+          WSGateway Creation: {{ 'SUCCESS' if wsgateway_creation.status in [200, 201] else 'FAILED' }}
+          Gateway Name: {{ wsgateway_name }}
+          {% if wsgateway_creation.status in [200, 201] %}
+          Status: {{ wsgateway_creation.json.status | default('Created') }}
+          {% else %}
+          Error: {{ wsgateway_creation.json.error | default('Unknown error') }}
+          {% endif %}
+
+    - name: Verify WSGateway exists
+      uri:
+        url: "https://{{ datapower_host }}:{{ datapower_rest_port }}/mgmt/config/{{ datapower_domain }}/WSGateway/{{ wsgateway_name }}"
+        method: GET
+        user: "{{ datapower_user }}"
+        password: "{{ datapower_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200, 404]
+      register: wsgateway_verification
+      failed_when: false
+
+    - name: Final Summary
+      debug:
+        msg: |
+          ===========================================
+          WSGateway Creation Summary
+          ===========================================
+          DataPower Host: {{ datapower_host }}
+          REST API Port: {{ datapower_rest_port }}
+          Domain: {{ datapower_domain }}
+          
+          WSGateway Name: {{ wsgateway_name }}
+          Listen Address: {{ wsgateway_address }}:{{ wsgateway_port }}
+          HTTP Handler: {{ http_handler_name }}
+          
+          Connectivity Test: {{ 'PASS' if connectivity_test.status == 200 else 'FAIL' }}
+          HTTP Handler Created: {{ 'YES' if handler_creation.status in [200, 201] else 'NO' }}
+          WSGateway Created: {{ 'YES' if wsgateway_creation.status in [200, 201] else 'NO' }}
+          WSGateway Verified: {{ 'YES' if wsgateway_verification.status == 200 else 'NO' }}
+          
+          {% if wsgateway_verification.status == 200 %}
+          ✓ SUCCESS: WSGateway '{{ wsgateway_name }}' is ready!
+          
+          Access the gateway at: http://{{ datapower_host }}:{{ wsgateway_port }}
+          View in DataPower UI: https://{{ datapower_host }}:9090
+            → Navigate to: Services → WSGateway
+          {% else %}
+          ✗ FAILED: WSGateway creation failed
+          Check the errors above for details.
+          {% endif %}
+          ===========================================
+
