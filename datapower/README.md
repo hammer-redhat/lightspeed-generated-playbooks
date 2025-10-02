@@ -16,6 +16,7 @@ This repository contains an Ansible playbook for creating WSGateway (Web Service
 2. Network connectivity to DataPower REST management interface (port 5554)
 3. Valid DataPower credentials with permissions to create objects
 4. DataPower REST Management Interface enabled
+5. Version: IDG.10.6.4.0.
 
 ### Basic Usage
 
@@ -133,7 +134,7 @@ For each run, the playbook creates:
 The REST Management Interface should be enabled by default on port 5554. To verify:
 
 1. **Login to DataPower UI**: `https://<datapower-host>:9090`
-2. **Navigate to**: Administration → Main → REST Management Interface
+2. **Navigate to**: Objects -> Device management -> REST management interface
 3. **Verify**: Port 5554 is enabled
 
 ### Verify REST API Connectivity
