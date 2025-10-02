@@ -16,7 +16,6 @@ This repository contains an Ansible playbook for creating WSGateway (Web Service
 2. Network connectivity to DataPower REST management interface (port 5554)
 3. Valid DataPower credentials with permissions to create objects
 4. DataPower REST Management Interface enabled
-5. Version: IDG.10.6.4.0.
 
 ### Basic Usage
 
@@ -295,6 +294,6 @@ For issues or questions:
 **Note:** This playbook uses the DataPower REST Management Interface (port 5554) for all operations. The XML Management Interface (port 5550) is not used.
 
 **Tested with:**
-- IBM DataPower Gateway
+- IBM DataPower Gateway: Version - IDG.10.6.4.0.
 - Ansible 2.9+
 - Python 3.x
