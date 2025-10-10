@@ -70,6 +70,18 @@ ansible-playbook create_wsgateway_rest.yml \
   -e "wsgateway_port_override=8080"
 ```
 
+### Example 6: Bind to a specific listen address
+
+```bash
+ansible-playbook create_wsgateway_rest.yml \
+  -e "datapower_password=redhat123" \
+  -e "wsgateway_name_override=api-gateway" \
+  -e "wsgateway_port_override=8080" \
+  -e "wsgateway_address_override=10.0.0.10"
+```
+
+This will set the HTTP handler `LocalAddress` to `10.0.0.10` and `Port` to `8080` using HTTP/1.1.
+
 ### Example 3: Create Multiple Gateways
 
 ```bash
@@ -108,7 +120,7 @@ ansible-playbook create_wsgateway_rest.yml \
 The playbook performs the following steps:
 
 1. **Connectivity Test** - Verifies connection to the DataPower REST API
-2. **Create HTTP Handler** - Creates an `HTTPSourceProtocolHandler` for the gateway to listen on
+2. **Create HTTP Handler** - Creates an `HTTPSourceProtocolHandler` (HTTP/1.1) for the gateway to listen on using the configured `LocalAddress` and `Port`
 3. **Create WSGateway** - Creates the WSGateway object using the HTTP handler
 4. **Verification** - Confirms the WSGateway was successfully created
 5. **Summary Report** - Displays the results and access information
@@ -124,6 +136,8 @@ For each run, the playbook creates:
 - **WSGateway**: `{wsgateway_name}`
   - Web Services Gateway service
   - Uses the HTTP handler as its front protocol
+  - XMLManager: `default`
+  - PolicyAttachments: `default`
   - Enabled and ready to process requests
 
 ## ⚙️ DataPower Configuration
