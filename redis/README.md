@@ -55,7 +55,7 @@ gh auth login
 - Appropriate repository access/permissions
 - Repository URL updated in vars file
 
-**For private repositories:** See [GITHUB_AUTH.md](GITHUB_AUTH.md) for authentication setup.
+**For private repositories:** See [GIT_AUTHENTICATION.md](GIT_AUTHENTICATION.md) for detailed authentication setup.
 
 ## Quick Start
 
@@ -318,8 +318,9 @@ grep git_repo_url my_cluster_vars.yml
 
 **Job hangs on "Clone git repository" in AAP:**
 - This happens when cloning a private repository without authentication
-- See [GITHUB_AUTH.md](GITHUB_AUTH.md) for how to configure GitHub token authentication
-- The playbook supports both SSH keys and HTTPS with tokens
+- See [GIT_AUTHENTICATION.md](GIT_AUTHENTICATION.md) for how to configure GitHub token authentication
+- The playbook automatically configures git credentials when a token is provided
+- Supports both SSH keys and HTTPS with tokens
 
 ## Security Best Practices
 

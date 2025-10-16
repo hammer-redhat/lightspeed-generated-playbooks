@@ -40,19 +40,11 @@
     
     # Git Configuration
     git_repo_url: "{{ git_repo_url | default('git@github.com:yourorg/redis-configs.git') }}"
-    github_token: "{{ github_token | default('') }}"  # Optional: GitHub Personal Access Token for private repos
+    github_token: "{{ github_token | default('') }}"  # Optional: GitHub Personal Access Token for HTTPS private repos
     git_repo_local_path: "/tmp/redis-configs-{{ ansible_date_time.epoch }}"
     git_branch_prefix: "redis-deployment"
     create_pull_request: "{{ create_pull_request | default('yes') }}"
     pr_reviewers_list: "{{ pr_reviewers_list | default('') }}"
-    
-    # Build authenticated URL if token is provided and URL is HTTPS
-    git_clone_url: >-
-      {%- if github_token and git_repo_url.startswith('https://') -%}
-        {{ git_repo_url | regex_replace('^https://', 'https://' + github_token + '@') }}
-      {%- else -%}
-        {{ git_repo_url }}
-      {%- endif -%}
     
     # Generated file configuration
     output_filename: "redis_cluster_{{ cluster_name | regex_replace('[^a-zA-Z0-9]', '_') }}_{{ ansible_date_time.epoch }}.yml"
@@ -314,14 +306,34 @@
         path: "{{ git_repo_local_path }}"
         state: absent
 
+    - name: Configure git credential helper for HTTPS authentication
+      ansible.builtin.command:
+        cmd: "{{ item }}"
+      loop:
+        - "git config --global credential.helper store"
+        - "git config --global user.name 'Ansible Automation Platform'"
+        - "git config --global user.email 'aap-redis-automation@example.com'"
+      changed_when: false
+      when: github_token | length > 0
+
+    - name: Create git credentials file
+      ansible.builtin.copy:
+        content: |
+          https://{{ github_token }}:x-oauth-basic@github.com
+        dest: "{{ ansible_env.HOME }}/.git-credentials"
+        mode: '0600'
+      when: github_token | length > 0
+      no_log: true
+
     - name: Clone git repository
       ansible.builtin.git:
-        repo: "{{ git_clone_url }}"
+        repo: "{{ git_repo_url }}"
         dest: "{{ git_repo_local_path }}"
         version: main
         accept_hostkey: yes
       register: git_clone
-      no_log: "{{ github_token | length > 0 }}"  # Don't log if token is present
+      environment:
+        GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
 
     - name: Create deployments directory if it doesn't exist
       ansible.builtin.file:
@@ -390,18 +402,13 @@
         chdir: "{{ git_repo_local_path }}"
       register: git_commit
 
-    - name: Configure git remote URL with authentication
-      ansible.builtin.command:
-        cmd: git remote set-url origin {{ git_clone_url }}
-        chdir: "{{ git_repo_local_path }}"
-      when: github_token | length > 0
-      no_log: true
-
     - name: Push branch to remote
       ansible.builtin.command:
         cmd: git push origin {{ git_branch_name }}
         chdir: "{{ git_repo_local_path }}"
       register: git_push
+      environment:
+        GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
 
     - name: Create Pull Request using GitHub CLI
       ansible.builtin.command:
@@ -448,6 +455,20 @@
         path: "{{ git_repo_local_path }}"
         state: absent
       when: git_repo_local_path is defined and git_repo_local_path.startswith('/tmp/')
+
+    - name: Cleanup git credentials file
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.git-credentials"
+        state: absent
+      when: github_token | length > 0
+      no_log: true
+
+    - name: Reset git credential helper
+      ansible.builtin.command:
+        cmd: git config --global --unset credential.helper
+      changed_when: false
+      failed_when: false
+      when: github_token | length > 0
 
     - name: Final Summary
       ansible.builtin.debug:
