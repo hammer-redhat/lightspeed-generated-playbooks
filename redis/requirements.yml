@@ -1,0 +1,11 @@
+---
+# Ansible Galaxy requirements for Redis automation
+# Install with: ansible-galaxy install -r requirements.yml
+
+collections:
+  - name: ansible.builtin
+    version: ">=2.10.0"
+  
+  - name: community.general
+    version: ">=3.0.0"
+

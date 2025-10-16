@@ -1,0 +1,456 @@
+---
+- name: Generate Redis Cluster Configuration and Create Pull Request (AAP Version)
+  hosts: localhost
+  gather_facts: yes
+  
+  vars:
+    # Default values - will be overridden by Survey or extra vars
+    cluster_name: "{{ cluster_name | default('mbf-redis-XXX.example.com') }}"
+    cluster_master: "{{ cluster_master | default('lmbfXXXa.prod.example.com') }}"
+    cluster_name_active: "{{ cluster_name_active | default(cluster_name) }}"
+    cluster_master_active: "{{ cluster_master_active | default(cluster_master) }}"
+    
+    redis_version: "{{ redis_version | default('7.8.6-60') }}"
+    bdb_version: "{{ bdb_version | default('7.4.0') }}"
+    featureset_version: "{{ featureset_version | default('8') }}"
+    release_gate: "{{ release_gate | default('-C prodmbf') }}"
+    environment: "{{ environment | default('development') }}"
+    
+    # Database configuration
+    database_name: "{{ database_name | default('mbf') }}"
+    database_port: "{{ database_port | default(10000) }}"
+    memory_size_gb: "{{ memory_size_gb | default(8) }}"
+    memory_size: "{{ (memory_size_gb | int * 1073741824) | int }}"  # Convert GB to bytes
+    
+    sharding_enabled: "{{ sharding_enabled | default(true) | bool }}"
+    shards_count: "{{ shards_count | default(1) }}"
+    replication_enabled: "{{ replication_enabled | default(true) | bool }}"
+    tls_mode: "{{ tls_mode | default('enabled') }}"
+    data_persistence: "{{ data_persistence | default('disabled') }}"
+    
+    # High Availability
+    slave_ha_enabled: "{{ slave_ha_enabled | default('enabled') }}"
+    slave_ha_grace_period: "{{ slave_ha_grace_period | default(120) }}"
+    slave_ha_cooldown_period: "{{ slave_ha_cooldown_period | default(240) }}"
+    slave_ha_bdb_cooldown_period: "{{ slave_ha_bdb_cooldown_period | default(360) }}"
+    
+    # LDAP Configuration (from AAP credentials or extra vars)
+    ldaps_url: "{{ ldaps_url | default('ldaps://mdsem.example.com:636') }}"
+    bind_dn: "{{ bind_dn | default('cn=mbf-redis-ro-serviceid,ou=TrustedApplications,ou=FrameworkSystems,o=xyz') }}"
+    
+    # Git Configuration
+    git_repo_url: "{{ git_repo_url | default('git@github.com:yourorg/redis-configs.git') }}"
+    git_repo_local_path: "/tmp/redis-configs-{{ ansible_date_time.epoch }}"
+    git_branch_prefix: "{{ git_branch_prefix | default('redis-deployment') }}"
+    create_pull_request: "{{ create_pull_request | default('yes') }}"
+    pr_reviewers_list: "{{ pr_reviewers_list | default('') }}"
+    
+    # Generated file configuration
+    output_filename: "redis_cluster_{{ cluster_name | regex_replace('[^a-zA-Z0-9]', '_') }}_{{ ansible_date_time.epoch }}.yml"
+    output_dir: "{{ git_repo_local_path }}/deployments"
+    
+    # Git configuration
+    git_branch_name: "{{ git_branch_prefix }}-{{ cluster_name | regex_replace('[^a-zA-Z0-9]', '-') }}-{{ ansible_date_time.epoch }}"
+    pr_title: "Redis Cluster Deployment: {{ cluster_name }} ({{ environment }})"
+    pr_body: |
+      ## Redis Cluster Deployment Configuration
+      
+      **Environment:** {{ environment | upper }}
+      **Cluster Name:** {{ cluster_name }}
+      **Redis Version:** {{ redis_version }}
+      **BDB Version:** {{ bdb_version }}
+      
+      ### Configuration Details
+      - **Primary Cluster:** {{ cluster_master }}
+      - **Active Cluster:** {{ cluster_master_active }}
+      - **Database Name:** {{ database_name }}
+      - **Database Port:** {{ database_port }}
+      - **Memory Size:** {{ memory_size_gb }}GB
+      - **Sharding:** {{ 'Enabled (' + (shards_count | string) + ' shards)' if sharding_enabled else 'Disabled' }}
+      - **Replication:** {{ 'Enabled' if replication_enabled else 'Disabled' }}
+      - **TLS Mode:** {{ tls_mode }}
+      - **Data Persistence:** {{ data_persistence }}
+      - **HA Enabled:** {{ slave_ha_enabled }}
+      
+      ### Generated Configuration
+      This PR contains the generated Redis cluster configuration file for deployment.
+      
+      **File:** `{{ output_filename }}`
+      
+      Please review and approve for deployment to **{{ environment | upper }}**.
+      
+      ---
+      *Generated automatically by Ansible Automation Platform on {{ ansible_date_time.iso8601 }}*
+    
+    # Service IDs - can be overridden via extra vars
+    service_ids: "{{ service_ids | default([
+      {'name': 'mbf-redis-admin-serviceid', 'dn': 'cn=mbf-redis-admin-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [1]},
+      {'name': 'mbf-redis-rw-serviceid', 'dn': 'cn=mbf-redis-rw-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [4]},
+      {'name': 'mbf-redis-ro-serviceid', 'dn': 'cn=mbf-redis-ro-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [5]},
+      {'name': 'red-cv-serviceid', 'dn': 'cn=red-cv-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [3]}
+    ]) }}"
+    
+    # Redis Roles
+    redis_roles: "{{ redis_roles | default([
+      {'name': 'Cluster Member', 'management': 'cluster_membr'},
+      {'name': 'Cluster Viewer', 'management': 'cluster_viewr'},
+      {'name': 'DB Member', 'management': 'db_membr'},
+      {'name': 'DB Viewer', 'management': 'db_viewr'}
+    ]) }}"
+    
+    # ACLs
+    acls: "{{ acls | default([
+      {'name': 'Read Only', 'acl': '+@read YYYYYYYY'},
+      {'name': 'Not dangerous', 'acl': '+@all YYYYYYYY'},
+      {'name': 'Not dangerous extended', 'acl': '+@all YYYYYYYY'},
+      {'name': 'Read Only extended', 'acl': '+@read YYYYYYYY'}
+    ]) }}"
+    
+    # CRDB Configuration
+    crdbs:
+      - name: "{{ database_name }}"
+        causal_consistency: false
+        encryption: true
+        default_db_config:
+          name: "{{ database_name }}"
+          data_persistence: "{{ data_persistence }}"
+          proxy_policy: "all-nodes"
+          replication: "{{ replication_enabled }}"
+          default_user: false
+          memory_size: "{{ memory_size }}"
+          sharding: "{{ sharding_enabled }}"
+          shard_key_regex:
+            - regex: ".*{(?<tag>.*)}.*"
+            - regex: "(?<tag>.*)"
+          shards_count: "{{ shards_count }}"
+          port: "{{ database_port }}"
+          enforce_client_authentication: "disabled"
+          tls_mode: "{{ tls_mode }}"
+          roles_permissions:
+            - {redis_acl_uid: 1, role_uid: 1}
+            - {redis_acl_uid: 4, role_uid: 4}
+            - {redis_acl_uid: 5, role_uid: 5}
+            - {redis_acl_uid: 2, role_uid: 3}
+        instances:
+          - cluster:
+              url: "https://{{ cluster_name }}:9443"
+              credentials:
+                username: "root@{{ cluster_master }}"
+                password: "{{ cluster_admin_password | trim }}"
+              name: "{{ cluster_name }}"
+            compression: 3
+          - cluster:
+              url: "https://{{ cluster_name_active }}:9443"
+              credentials:
+                username: "root@{{ cluster_master_active }}"
+                password: "{{ cluster_admin_password_active | trim }}"
+              name: "{{ cluster_name_active }}"
+            compression: 3
+    
+    # Secrets from AAP Credentials
+    cluster_admin_password: "{{ vault_cluster_admin_password | default('{{ vault_cluster_admin_password }}') }}"
+    cluster_admin_password_active: "{{ vault_cluster_admin_password_active | default('{{ vault_cluster_admin_password_active }}') }}"
+    bind_pass: "{{ vault_bind_pass | default('{{ vault_bind_pass }}') }}"
+    secret_hi: "{{ vault_secret_hi | default('{{ vault_secret_hi }}') }}"
+    
+    # PR Configuration
+    pr_labels: "{{ pr_labels | default(['redis', 'infrastructure', environment]) }}"
+    pr_reviewers: "{{ pr_reviewers_list.split(',') | map('trim') | select | list if pr_reviewers_list else [] }}"
+
+  tasks:
+    # ============================================================================
+    # PREREQUISITE CHECKS
+    # ============================================================================
+    
+    - name: Display banner
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Redis Cluster Configuration Automation - AAP Version         ║"
+          - "║  Environment: {{ environment | upper }}                                            ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+
+    - name: Display survey inputs summary
+      ansible.builtin.debug:
+        msg:
+          - "Configuration Summary from Survey:"
+          - "  Cluster: {{ cluster_name }}"
+          - "  Environment: {{ environment }}"
+          - "  Redis Version: {{ redis_version }}"
+          - "  Database: {{ database_name }} (Port: {{ database_port }})"
+          - "  Memory: {{ memory_size_gb }}GB"
+          - "  Sharding: {{ 'Enabled (' + (shards_count | string) + ' shards)' if sharding_enabled else 'Disabled' }}"
+          - "  Replication: {{ 'Enabled' if replication_enabled else 'Disabled' }}"
+          - "  TLS: {{ tls_mode }}"
+          - "  HA: {{ slave_ha_enabled }}"
+
+    - name: Check if git is installed
+      ansible.builtin.command: git --version
+      register: git_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display git status
+      ansible.builtin.debug:
+        msg: "✓ Git is installed: {{ git_version_check.stdout }}"
+      when: git_version_check.rc == 0
+
+    - name: Fail if git is not installed
+      ansible.builtin.fail:
+        msg: |
+          ✗ Git is not installed on the execution node
+          
+          Please install git on the AAP execution environment:
+            Add 'git' to the EE dependencies
+      when: git_version_check.rc != 0
+
+    - name: Check if python3 is installed
+      ansible.builtin.command: python3 --version
+      register: python_version_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display python status
+      ansible.builtin.debug:
+        msg: "✓ Python3 is installed: {{ python_version_check.stdout }}"
+      when: python_version_check.rc == 0
+
+    - name: Check if PyYAML is available
+      ansible.builtin.command: python3 -c "import yaml"
+      register: pyyaml_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display PyYAML status
+      ansible.builtin.debug:
+        msg: "✓ PyYAML is installed"
+      when: pyyaml_check.rc == 0
+
+    - name: Check if GitHub CLI is installed
+      ansible.builtin.command: gh --version
+      register: gh_version_check
+      changed_when: false
+      failed_when: false
+      when: create_pull_request == 'yes'
+
+    - name: Display GitHub CLI status
+      ansible.builtin.debug:
+        msg: "✓ GitHub CLI is installed: {{ gh_version_check.stdout_lines[0] }}"
+      when: 
+        - create_pull_request == 'yes'
+        - gh_version_check.rc == 0
+
+    - name: Check GitHub CLI authentication
+      ansible.builtin.command: gh auth status
+      register: gh_auth_check
+      changed_when: false
+      failed_when: false
+      when: 
+        - create_pull_request == 'yes'
+        - gh_version_check.rc == 0
+
+    - name: Display GitHub CLI auth status
+      ansible.builtin.debug:
+        msg: "✓ GitHub CLI is authenticated"
+      when: 
+        - create_pull_request == 'yes'
+        - gh_version_check.rc == 0
+        - gh_auth_check.rc == 0
+
+    - name: Warn about PR creation
+      ansible.builtin.debug:
+        msg: |
+          ⚠ Pull Request creation disabled by survey choice or GitHub CLI not available
+          Branch will be pushed but PR must be created manually
+      when: create_pull_request == 'no' or gh_version_check.rc != 0
+
+    - name: Prerequisite check complete
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "════════════════════════════════════════════════════════════════"
+          - "All checks passed! Proceeding with configuration generation..."
+          - "════════════════════════════════════════════════════════════════"
+          - ""
+
+    # ============================================================================
+    # MAIN TASKS
+    # ============================================================================
+    
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - cluster_name is defined
+          - cluster_master is defined
+          - redis_version is defined
+          - git_repo_url is defined
+          - database_name is defined
+        fail_msg: "Missing required variables from survey"
+        success_msg: "All required variables are defined"
+
+    - name: Display configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "=== Final Configuration ==="
+          - "Cluster Name: {{ cluster_name }}"
+          - "Environment: {{ environment }}"
+          - "Redis Version: {{ redis_version }}"
+          - "Database: {{ database_name }}"
+          - "Memory: {{ memory_size_gb }}GB ({{ memory_size }} bytes)"
+          - "Output File: {{ output_filename }}"
+          - "Git Branch: {{ git_branch_name }}"
+
+    - name: Clean up existing repository directory
+      ansible.builtin.file:
+        path: "{{ git_repo_local_path }}"
+        state: absent
+
+    - name: Clone git repository
+      ansible.builtin.git:
+        repo: "{{ git_repo_url }}"
+        dest: "{{ git_repo_local_path }}"
+        version: main
+        accept_hostkey: yes
+      register: git_clone
+
+    - name: Create deployments directory if it doesn't exist
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create new git branch
+      ansible.builtin.command:
+        cmd: git checkout -b {{ git_branch_name }}
+        chdir: "{{ git_repo_local_path }}"
+      register: git_branch_create
+
+    - name: Generate Redis cluster configuration from template
+      ansible.builtin.template:
+        src: templates/redis_cluster_config.yml.j2
+        dest: "{{ output_dir }}/{{ output_filename }}"
+        mode: '0644'
+      register: template_result
+
+    - name: Display generated file location
+      ansible.builtin.debug:
+        msg: "✓ Configuration file generated: {{ output_dir }}/{{ output_filename }}"
+
+    - name: Validate generated YAML file
+      ansible.builtin.command:
+        cmd: "python3 -c 'import yaml; yaml.safe_load(open(\"{{ output_dir }}/{{ output_filename }}\"))'"
+      register: yaml_validation
+      changed_when: false
+      failed_when: false
+      when: pyyaml_check.rc == 0
+
+    - name: Display YAML validation result
+      ansible.builtin.debug:
+        msg: "{{ 'YAML validation: PASSED ✓' if yaml_validation.rc == 0 else 'YAML validation: FAILED ✗ - ' + yaml_validation.stderr }}"
+      when: pyyaml_check.rc == 0
+
+    - name: Configure git user for commit
+      ansible.builtin.command:
+        cmd: "{{ item }}"
+        chdir: "{{ git_repo_local_path }}"
+      loop:
+        - "git config user.name 'Ansible Automation Platform'"
+        - "git config user.email 'aap-redis-automation@example.com'"
+      changed_when: false
+
+    - name: Stage generated file
+      ansible.builtin.command:
+        cmd: git add "{{ output_dir }}/{{ output_filename }}"
+        chdir: "{{ git_repo_local_path }}"
+
+    - name: Commit changes
+      ansible.builtin.command:
+        cmd: >
+          git commit -m "Add Redis cluster configuration for {{ cluster_name }}"
+          -m "Environment: {{ environment }}"
+          -m "Redis Version: {{ redis_version }}"
+          -m "BDB Version: {{ bdb_version }}"
+          -m "Database: {{ database_name }} (Port: {{ database_port }})"
+          -m "Memory: {{ memory_size_gb }}GB"
+          -m "Cluster Master: {{ cluster_master }}"
+          -m ""
+          -m "Generated by AAP Job Template: {{ tower_job_template_name | default('Redis Config Generator') }}"
+          -m "Job ID: {{ tower_job_id | default('N/A') }}"
+          -m "User: {{ tower_user_name | default('Unknown') }}"
+        chdir: "{{ git_repo_local_path }}"
+      register: git_commit
+
+    - name: Push branch to remote
+      ansible.builtin.command:
+        cmd: git push origin {{ git_branch_name }}
+        chdir: "{{ git_repo_local_path }}"
+      register: git_push
+
+    - name: Create Pull Request using GitHub CLI
+      ansible.builtin.command:
+        cmd: >
+          gh pr create
+          --title "{{ pr_title }}"
+          --body "{{ pr_body }}"
+          --base main
+          --head {{ git_branch_name }}
+          {% if pr_labels | length > 0 %}--label {{ pr_labels | join(',') }}{% endif %}
+          {% if pr_reviewers | length > 0 %}--reviewer {{ pr_reviewers | join(',') }}{% endif %}
+        chdir: "{{ git_repo_local_path }}"
+      register: pr_create
+      when: 
+        - create_pull_request == 'yes'
+        - gh_version_check is defined
+        - gh_version_check.rc == 0
+        - gh_auth_check is defined
+        - gh_auth_check.rc == 0
+
+    - name: Display PR creation result
+      ansible.builtin.debug:
+        msg: 
+          - "✓ Pull Request created successfully!"
+          - "{{ pr_create.stdout }}"
+      when: 
+        - create_pull_request == 'yes'
+        - pr_create is succeeded
+
+    - name: Display manual PR creation instructions
+      ansible.builtin.debug:
+        msg:
+          - "⚠ Pull Request not created automatically"
+          - "Please create the PR manually:"
+          - "  Repository: {{ git_repo_url }}"
+          - "  Branch: {{ git_branch_name }}"
+          - "  Title: {{ pr_title }}"
+          - ""
+          - "✓ Branch pushed successfully to remote"
+      when: create_pull_request == 'no' or (pr_create is defined and pr_create is not succeeded) or gh_version_check.rc != 0
+
+    - name: Cleanup temporary repository
+      ansible.builtin.file:
+        path: "{{ git_repo_local_path }}"
+        state: absent
+      when: git_repo_local_path is defined and git_repo_local_path.startswith('/tmp/')
+
+    - name: Final Summary
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  AAP Job Complete!                                             ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✓ Configuration generated for: {{ cluster_name }}"
+          - "✓ Environment: {{ environment | upper }}"
+          - "✓ File: {{ output_filename }}"
+          - "✓ Branch: {{ git_branch_name }}"
+          - "{{ '✓ Pull Request created' if (create_pull_request == 'yes' and pr_create is succeeded) else '⚠ Pull Request needs manual creation' }}"
+          - ""
+          - "Next steps:"
+          - "  1. Review the Pull Request"
+          - "  2. Get necessary approvals"
+          - "  3. Merge to main branch"
+          - "  4. Deploy using the generated configuration"
+          - ""
+          - "AAP Job ID: {{ tower_job_id | default('N/A') }}"
+          - "Executed by: {{ tower_user_name | default('Unknown') }}"
+

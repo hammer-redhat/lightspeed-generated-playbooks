@@ -6,7 +6,7 @@
     # DataPower Connection Settings
     datapower_host: "1.2.3.4"
     datapower_user: "hammer"
-#    datapower_password:
+    datapower_password: "redhat123"
     datapower_rest_port: 5554
     datapower_domain: "default"
     

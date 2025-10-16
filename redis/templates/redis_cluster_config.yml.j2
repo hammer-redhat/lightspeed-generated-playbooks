@@ -1,0 +1,75 @@
+- hosts: localhost
+  vars:
+    declared_redis_version: "{{ redis_version }}"
+    declared_bdb_version: "{{ bdb_version }}"
+    declared_featureset_version: "{{ featureset_version }}"
+    releasegate: "{{ release_gate }}"
+    cluster_name: {{ cluster_name }}
+    cluster_master: {{ cluster_master }}
+    cluster_name_active: {{ cluster_name_active }}
+    cluster_master_active: {{ cluster_master_active }}
+    target_slave_ha: {{ slave_ha_enabled }}
+    target_slave_ha_grace_period: {{ slave_ha_grace_period }}
+    target_slave_ha_cooldown_period: {{ slave_ha_cooldown_period }}
+    target_slave_ha_bdb_cooldown_period: {{ slave_ha_bdb_cooldown_period }}
+    ldaps: "{{ ldaps_url }}"
+    bind_dn: "{{ bind_dn }}"
+    service_ids:
+{% for service_id in service_ids %}
+      - name: "{{ service_id.name }}"
+        dn: "{{ service_id.dn }}"
+        role_uids: {{ service_id.role_uids }}
+{% endfor %}
+    redis_roles:
+{% for role in redis_roles %}
+      - name: "{{ role.name }}"
+        management: "{{ role.management }}"
+{% endfor %}
+    acls:
+{% for acl in acls %}
+      - name: "{{ acl.name }}"
+        acl: "{{ acl.acl }}"
+{% endfor %}
+    crdbs:
+{% for crdb in crdbs %}
+      - name: {{ crdb.name }}
+        causal_consistency: {{ crdb.causal_consistency | lower }}
+        encryption: {{ crdb.encryption | lower }}
+        default_db_config:
+          name: {{ crdb.default_db_config.name }}
+          data_persistence: "{{ crdb.default_db_config.data_persistence }}"
+          proxy_policy: "{{ crdb.default_db_config.proxy_policy }}"
+          replication: {{ crdb.default_db_config.replication | lower }}
+          default_user: {{ crdb.default_db_config.default_user | lower }}
+          memory_size: {{ crdb.default_db_config.memory_size }}
+          sharding: {{ crdb.default_db_config.sharding | lower }}
+          shard_key_regex:
+{% for regex in crdb.default_db_config.shard_key_regex %}
+            - regex: "{{ regex.regex }}"
+{% endfor %}
+          shards_count: {{ crdb.default_db_config.shards_count }}
+          port: {{ crdb.default_db_config.port }}
+          enforce_client_authentication: "{{ crdb.default_db_config.enforce_client_authentication }}"
+          tls_mode: "{{ crdb.default_db_config.tls_mode }}"
+          roles_permissions:
+{% for perm in crdb.default_db_config.roles_permissions %}
+            - {redis_acl_uid: {{ perm.redis_acl_uid }}, role_uid: {{ perm.role_uid }}}
+{% endfor %}
+        instances:
+{% for instance in crdb.instances %}
+          - cluster:
+              url: "{{ instance.cluster.url }}"
+              credentials:
+                username: "{{ instance.cluster.credentials.username }}"
+                password: "{{ instance.cluster.credentials.password }}"
+              name: "{{ instance.cluster.name }}"
+            compression: {{ instance.compression }}
+{% endfor %}
+{% endfor %}
+    cluster_admin_password: "{{ cluster_admin_password }}"
+    cluster_admin_password_active: "{{ cluster_admin_password_active }}"
+    bind_pass: "{{ bind_pass }}"
+    secret_hi: "{{ secret_hi }}"
+  roles:
+     - redis
+

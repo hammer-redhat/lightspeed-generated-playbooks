@@ -1,0 +1,118 @@
+---
+# Redis Cluster Configuration Variables
+# Copy this file and customize for your specific cluster deployment
+
+# Redis Version Information
+redis_version: "7.8.6-60"
+bdb_version: "7.4.0"
+featureset_version: "8"
+release_gate: "-C prodmbf"
+
+# Cluster Information
+cluster_name: mbf-redis-XXX.example.com
+cluster_master: lmbfXXXa.prod.example.com
+cluster_name_active: mbf-redis-XXX.example.com
+cluster_master_active: lmbfXXXa.prod.example.com
+
+# High Availability Settings
+slave_ha_enabled: enabled
+slave_ha_grace_period: 120
+slave_ha_cooldown_period: 240
+slave_ha_bdb_cooldown_period: 360
+
+# LDAP Configuration
+ldaps_url: "ldaps://ldaps.example.com:636"
+bind_dn: "cn=mbf-redis-ro-serviceid,ou=TrustedApplications,ou=FrameworkSystems,o=xyz"
+
+# Service IDs and their roles
+service_ids:
+  - name: "mbf-redis-admin-serviceid"
+    dn: "cn=mbf-redis-admin-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz"
+    role_uids: [1]
+  - name: "mbf-redis-rw-serviceid"
+    dn: "cn=mbf-redis-rw-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz"
+    role_uids: [4]
+  - name: "mbf-redis-ro-serviceid"
+    dn: "cn=mbf-redis-ro-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz"
+    role_uids: [5]
+  - name: "red-cv-serviceid"
+    dn: "cn=red-cv-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz"
+    role_uids: [3]
+
+# Redis Roles
+redis_roles:
+  - name: "Cluster Member"
+    management: "cluster_membr"
+  - name: "Cluster Viewer"
+    management: "cluster_viewr"
+  - name: "DB Member"
+    management: "db_membr"
+  - name: "DB Viewer"
+    management: "db_viewr"
+
+# Access Control Lists
+acls:
+  - name: "Read Only"
+    acl: "+@read YYYYYYYY"
+  - name: "Not dangerous"
+    acl: "+@all YYYYYYYY"
+  - name: "Not dangerous extended"
+    acl: "+@all YYYYYYYY"
+  - name: "Read Only extended"
+    acl: "+@read YYYYYYYY"
+
+# Cross-Region Database Configuration
+crdbs:
+  - name: mbf
+    causal_consistency: false
+    encryption: true
+    default_db_config:
+      name: mbf
+      data_persistence: "disabled"
+      proxy_policy: "all-nodes"
+      replication: true
+      default_user: false
+      memory_size: 8589934592
+      sharding: true
+      shard_key_regex:
+        - regex: ".*{(?<tag>.*)}.*"
+        - regex: "(?<tag>.*)"
+      shards_count: 1
+      port: 10000
+      enforce_client_authentication: "disabled"
+      tls_mode: "enabled"
+      roles_permissions:
+        - {redis_acl_uid: 1, role_uid: 1}
+        - {redis_acl_uid: 4, role_uid: 4}
+        - {redis_acl_uid: 5, role_uid: 5}
+        - {redis_acl_uid: 2, role_uid: 3}
+    instances:
+      - cluster:
+          url: "https://{{ cluster_name }}:9443"
+          credentials:
+            username: "root@{{ cluster_master }}"
+            password: "{{ cluster_admin_password | trim }}"
+          name: "{{ cluster_name }}"
+        compression: 3
+      - cluster:
+          url: "https://{{ cluster_name_active }}:9443"
+          credentials:
+            username: "root@{{ cluster_master_active }}"
+            password: "{{ cluster_admin_password_active | trim }}"
+          name: "{{ cluster_name_active }}"
+        compression: 3
+
+# Vault-backed secrets (references to Ansible Vault variables)
+cluster_admin_password: "{{ vault_cluster_admin_password }}"
+cluster_admin_password_active: "{{ vault_cluster_admin_password_active }}"
+bind_pass: "{{ vault_bind_pass }}"
+secret_hi: "{{ vault_secret_hi }}"
+
+# Git Repository Configuration
+git_repo_url: "git@github.com:yourorg/redis-configs.git"
+git_repo_local_path: "/tmp/redis-configs"
+git_branch_prefix: "redis-deployment"
+pr_title_prefix: "Redis Cluster Deployment"
+pr_reviewers: []  # List of GitHub usernames
+pr_labels: ["redis", "infrastructure"]
+

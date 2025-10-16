@@ -1,0 +1,32 @@
+# Ansible Vault secrets
+*secrets*.yml
+!secrets_template.yml
+
+# Vault password files
+.vault_pass
+.vault_password
+*.vault
+
+# Generated files during testing
+/tmp/
+*.retry
+
+# Environment-specific vars (if containing sensitive data)
+# Uncomment if needed:
+# prod_*.yml
+# *_production.yml
+
+# Backup files
+*.bak
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
