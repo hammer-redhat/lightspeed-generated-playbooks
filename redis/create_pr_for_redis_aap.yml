@@ -41,7 +41,7 @@
     # Git Configuration
     git_repo_url: "{{ git_repo_url | default('git@github.com:yourorg/redis-configs.git') }}"
     git_repo_local_path: "/tmp/redis-configs-{{ ansible_date_time.epoch }}"
-    git_branch_prefix: "{{ git_branch_prefix | default('redis-deployment') }}"
+    git_branch_prefix: "redis-deployment"
     create_pull_request: "{{ create_pull_request | default('yes') }}"
     pr_reviewers_list: "{{ pr_reviewers_list | default('') }}"
     
