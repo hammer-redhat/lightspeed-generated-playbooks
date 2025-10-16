@@ -7,6 +7,11 @@
     # NOTE: Variables passed via Survey/extra_vars will override these defaults
     # Do NOT use self-referencing defaults like "{{ var | default('value') }}" - it causes recursive loops!
     
+    # HA defaults (will be overridden by extra_vars if provided)
+    slave_ha_grace_period: 120
+    slave_ha_cooldown_period: 240
+    slave_ha_bdb_cooldown_period: 360
+    
     # Computed variables (these are fine as they don't self-reference)
     memory_size: "{{ (memory_size_gb | default(8) | int * 1073741824) | int }}"  # Convert GB to bytes
     git_repo_local_path: "/tmp/redis-configs-{{ ansible_date_time.epoch }}"
