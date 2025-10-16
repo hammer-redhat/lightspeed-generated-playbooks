@@ -49,29 +49,25 @@
       ---
       *Generated automatically by Ansible Automation Platform on {{ ansible_date_time.iso8601 }}*
     
-    # Service IDs - can be overridden via extra vars
-    service_ids: "{{ service_ids | default([
-      {'name': 'mbf-redis-admin-serviceid', 'dn': 'cn=mbf-redis-admin-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [1]},
-      {'name': 'mbf-redis-rw-serviceid', 'dn': 'cn=mbf-redis-rw-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [4]},
-      {'name': 'mbf-redis-ro-serviceid', 'dn': 'cn=mbf-redis-ro-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [5]},
-      {'name': 'red-cv-serviceid', 'dn': 'cn=red-cv-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [3]}
-    ]) }}"
+    # Service IDs, Redis Roles, and ACLs should be passed via extra_vars
+    # These defaults are set via Jinja2 in tasks if not provided
+    _service_ids_default:
+      - {'name': 'mbf-redis-admin-serviceid', 'dn': 'cn=mbf-redis-admin-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [1]}
+      - {'name': 'mbf-redis-rw-serviceid', 'dn': 'cn=mbf-redis-rw-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [4]}
+      - {'name': 'mbf-redis-ro-serviceid', 'dn': 'cn=mbf-redis-ro-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [5]}
+      - {'name': 'red-cv-serviceid', 'dn': 'cn=red-cv-serviceid,ou=trustedapplications,ou=frameworksystems,o=xyz', 'role_uids': [3]}
     
-    # Redis Roles
-    redis_roles: "{{ redis_roles | default([
-      {'name': 'Cluster Member', 'management': 'cluster_membr'},
-      {'name': 'Cluster Viewer', 'management': 'cluster_viewr'},
-      {'name': 'DB Member', 'management': 'db_membr'},
-      {'name': 'DB Viewer', 'management': 'db_viewr'}
-    ]) }}"
+    _redis_roles_default:
+      - {'name': 'Cluster Member', 'management': 'cluster_membr'}
+      - {'name': 'Cluster Viewer', 'management': 'cluster_viewr'}
+      - {'name': 'DB Member', 'management': 'db_membr'}
+      - {'name': 'DB Viewer', 'management': 'db_viewr'}
     
-    # ACLs
-    acls: "{{ acls | default([
-      {'name': 'Read Only', 'acl': '+@read YYYYYYYY'},
-      {'name': 'Not dangerous', 'acl': '+@all YYYYYYYY'},
-      {'name': 'Not dangerous extended', 'acl': '+@all YYYYYYYY'},
-      {'name': 'Read Only extended', 'acl': '+@read YYYYYYYY'}
-    ]) }}"
+    _acls_default:
+      - {'name': 'Read Only', 'acl': '+@read YYYYYYYY'}
+      - {'name': 'Not dangerous', 'acl': '+@all YYYYYYYY'}
+      - {'name': 'Not dangerous extended', 'acl': '+@all YYYYYYYY'}
+      - {'name': 'Read Only extended', 'acl': '+@read YYYYYYYY'}
     
     # CRDB Configuration
     crdbs:
@@ -312,6 +308,12 @@
         cmd: git checkout -b {{ git_branch_name }}
         chdir: "{{ git_repo_local_path }}"
       register: git_branch_create
+
+    - name: Set default values for template variables if not provided
+      ansible.builtin.set_fact:
+        service_ids: "{{ service_ids | default(_service_ids_default) }}"
+        redis_roles: "{{ redis_roles | default(_redis_roles_default) }}"
+        acls: "{{ acls | default(_acls_default) }}"
 
     - name: Generate Redis cluster configuration from template
       ansible.builtin.template:
