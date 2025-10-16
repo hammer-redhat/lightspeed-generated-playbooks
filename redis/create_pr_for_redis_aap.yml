@@ -40,10 +40,19 @@
     
     # Git Configuration
     git_repo_url: "{{ git_repo_url | default('git@github.com:yourorg/redis-configs.git') }}"
+    github_token: "{{ github_token | default('') }}"  # Optional: GitHub Personal Access Token for private repos
     git_repo_local_path: "/tmp/redis-configs-{{ ansible_date_time.epoch }}"
     git_branch_prefix: "redis-deployment"
     create_pull_request: "{{ create_pull_request | default('yes') }}"
     pr_reviewers_list: "{{ pr_reviewers_list | default('') }}"
+    
+    # Build authenticated URL if token is provided and URL is HTTPS
+    git_clone_url: >-
+      {%- if github_token and git_repo_url.startswith('https://') -%}
+        {{ git_repo_url | regex_replace('^https://', 'https://' + github_token + '@') }}
+      {%- else -%}
+        {{ git_repo_url }}
+      {%- endif -%}
     
     # Generated file configuration
     output_filename: "redis_cluster_{{ cluster_name | regex_replace('[^a-zA-Z0-9]', '_') }}_{{ ansible_date_time.epoch }}.yml"
@@ -307,11 +316,12 @@
 
     - name: Clone git repository
       ansible.builtin.git:
-        repo: "{{ git_repo_url }}"
+        repo: "{{ git_clone_url }}"
         dest: "{{ git_repo_local_path }}"
         version: main
         accept_hostkey: yes
       register: git_clone
+      no_log: "{{ github_token | length > 0 }}"  # Don't log if token is present
 
     - name: Create deployments directory if it doesn't exist
       ansible.builtin.file:
@@ -379,6 +389,13 @@
           -m "User: {{ tower_user_name | default('Unknown') }}"
         chdir: "{{ git_repo_local_path }}"
       register: git_commit
+
+    - name: Configure git remote URL with authentication
+      ansible.builtin.command:
+        cmd: git remote set-url origin {{ git_clone_url }}
+        chdir: "{{ git_repo_local_path }}"
+      when: github_token | length > 0
+      no_log: true
 
     - name: Push branch to remote
       ansible.builtin.command:
