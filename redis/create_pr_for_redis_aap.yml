@@ -12,6 +12,16 @@
     slave_ha_cooldown_period: 240
     slave_ha_bdb_cooldown_period: 360
     
+    # LDAP defaults (should be overridden by extra_vars in production)
+    ldaps_url: "ldaps://mdsem.example.com:636"
+    bind_dn: "cn=mbf-redis-ro-serviceid,ou=TrustedApplications,ou=FrameworkSystems,o=xyz"
+    
+    # Password/secret defaults (MUST be overridden via extra_vars/vault in production)
+    cluster_admin_password: "CHANGEME"
+    cluster_admin_password_active: "CHANGEME"
+    bind_pass: "CHANGEME"
+    secret_hi: "CHANGEME"
+    
     # Computed variables (these are fine as they don't self-reference)
     memory_size: "{{ (memory_size_gb | default(8) | int * 1073741824) | int }}"  # Convert GB to bytes
     git_repo_local_path: "/tmp/redis-configs-{{ ansible_date_time.epoch }}"
@@ -115,14 +125,7 @@
               name: "{{ cluster_name_active }}"
             compression: 3
     
-    # Secrets from AAP Credentials
-    cluster_admin_password: "{{ vault_cluster_admin_password | default('{{ vault_cluster_admin_password }}') }}"
-    cluster_admin_password_active: "{{ vault_cluster_admin_password_active | default('{{ vault_cluster_admin_password_active }}') }}"
-    bind_pass: "{{ vault_bind_pass | default('{{ vault_bind_pass }}') }}"
-    secret_hi: "{{ vault_secret_hi | default('{{ vault_secret_hi }}') }}"
-    
     # PR Configuration
-    pr_labels: "{{ pr_labels | default(['redis', 'infrastructure', environment]) }}"
     pr_reviewers: "{{ pr_reviewers_list.split(',') | map('trim') | select | list if pr_reviewers_list else [] }}"
 
   tasks:
@@ -319,6 +322,13 @@
         service_ids: "{{ service_ids | default(_service_ids_default) }}"
         redis_roles: "{{ redis_roles | default(_redis_roles_default) }}"
         acls: "{{ acls | default(_acls_default) }}"
+
+    - name: Override with vault credentials if provided
+      ansible.builtin.set_fact:
+        cluster_admin_password: "{{ vault_cluster_admin_password | default(cluster_admin_password) }}"
+        cluster_admin_password_active: "{{ vault_cluster_admin_password_active | default(cluster_admin_password_active) }}"
+        bind_pass: "{{ vault_bind_pass | default(bind_pass) }}"
+        secret_hi: "{{ vault_secret_hi | default(secret_hi) }}"
 
     - name: Generate Redis cluster configuration from template
       ansible.builtin.template:
