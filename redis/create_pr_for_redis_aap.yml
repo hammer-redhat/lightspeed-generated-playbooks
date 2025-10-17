@@ -378,6 +378,19 @@
         - create_pull_request == 'yes'
         - github_token | length > 0
 
+    - name: Debug - Show extracted GitHub info
+      ansible.builtin.debug:
+        msg:
+          - "GitHub Repo URL: {{ git_repo_url }}"
+          - "Extracted Owner: {{ github_repo_owner }}"
+          - "Extracted Repo Name: {{ github_repo_name }}"
+          - "API URL: https://api.github.com/repos/{{ github_repo_owner }}/{{ github_repo_name }}/pulls"
+          - "Branch: {{ git_branch_name }}"
+          - "Base: {{ git_default_branch }}"
+      when: 
+        - create_pull_request == 'yes'
+        - github_token | length > 0
+
     - name: Create Pull Request using GitHub API
       ansible.builtin.uri:
         url: "https://api.github.com/repos/{{ github_repo_owner }}/{{ github_repo_name }}/pulls"
@@ -394,10 +407,22 @@
         status_code: 201
         return_content: yes
       register: pr_create
-      no_log: true
+      ignore_errors: yes
+      no_log: false  # Temporarily disabled for debugging
       when: 
         - create_pull_request == 'yes'
         - github_token | length > 0
+
+    - name: Debug - Show API error if PR creation failed
+      ansible.builtin.debug:
+        msg:
+          - "⚠ PR creation failed!"
+          - "Status: {{ pr_create.status | default('N/A') }}"
+          - "Message: {{ pr_create.msg | default('N/A') }}"
+          - "Response: {{ pr_create.json | default('N/A') }}"
+      when: 
+        - pr_create is defined
+        - pr_create is failed
 
     - name: Display PR creation result
       ansible.builtin.debug:
