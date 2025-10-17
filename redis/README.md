@@ -1,395 +1,390 @@
-# Redis Cluster Configuration Automation
+# Redis Cluster Configuration Automation (AAP)
 
-This automation tooling generates Redis cluster configuration files from templates and automatically creates Pull Requests for team review and deployment.
+Automated Redis cluster configuration generation designed for **Ansible Automation Platform**. This automation generates Redis cluster configuration files from templates and automatically creates GitHub Pull Requests for team review and deployment.
 
-## Overview
+---
 
-This toolkit provides:
-- **Template-based configuration generation** for Redis clusters
+## 📌 Overview
+
+This automation provides:
+- **Template-based configuration generation** for Redis Enterprise clusters
 - **Automated git workflow** (branch creation, commit, push)
-- **Pull Request automation** using GitHub CLI
+- **Pull Request automation** using GitHub API (no CLI required)
 - **YAML validation** of generated configurations
+- **AAP Survey integration** for user-friendly input
 - **Audit trail** through git history
 
-## Files Structure
+**Job Template:** `LG: Redis Configuration Generator`  
+**Playbook:** `redis/create_pr_for_redis_aap.yml`
 
-```
-redis/
-├── create_pr_for_redis.yml          # Main automation playbook
-├── example_vars.yml                 # Example variables file
-├── example_redis_pr.yml             # Original example configuration
-├── templates/
-│   └── redis_cluster_config.yml.j2  # Jinja2 template for Redis config
-└── README.md                        # This file
-```
-
-## Prerequisites
-
-### Required Software
-- Ansible 2.9 or higher
-- Git
-- Python 3.x with PyYAML
-- GitHub CLI (`gh`) - optional but recommended for PR automation
-
-### Installation
-
-```bash
-# Install Ansible
-sudo dnf install ansible  # RHEL/CentOS
-# or
-sudo apt install ansible  # Ubuntu/Debian
-
-# Install GitHub CLI (optional)
-# RHEL/CentOS
-sudo dnf install gh
-
-# Ubuntu/Debian
-sudo apt install gh
-
-# Authenticate GitHub CLI
-gh auth login
-```
-
-### Git Configuration
-- SSH key configured for your git repository OR GitHub Personal Access Token
-- Appropriate repository access/permissions
-- Repository URL updated in vars file
-
-**For private repositories:** See [GIT_AUTHENTICATION.md](GIT_AUTHENTICATION.md) for detailed authentication setup.
-
-## Quick Start
-
-> **New!** The playbook now includes all prerequisite checks built-in. Just run it directly!
-> See `RUN_ME.md` for the quickest getting started guide.
-
-### 1. Create Ansible Vault for Secrets
-
-Store sensitive information in an Ansible Vault:
-
-```bash
-ansible-vault create redis_secrets.yml
-```
-
-Add your secrets:
-
-```yaml
 ---
-vault_cluster_admin_password: "your_secure_password"
-vault_cluster_admin_password_active: "your_secure_password_active"
-vault_bind_pass: "your_bind_password"
-vault_secret_hi: "your_secret"
-```
 
-### 2. (Optional) Customize Variables
+## 🚀 Running from AAP
 
-Copy and edit the example vars file for your specific cluster:
+### Prerequisites in AAP
 
-```bash
-cp example_vars.yml my_cluster_vars.yml
-vi my_cluster_vars.yml
-```
+1. **Project Setup**
+   - Project synced to this repository
+   - Default branch: `main`
 
-**Key variables to customize:**
+2. **Job Template Configuration**
+   - **Name:** `LG: Redis Configuration Generator`
+   - **Inventory:** `Demo Inventory` (localhost)
+   - **Playbook:** `redis/create_pr_for_redis_aap.yml`
+   - **Execution Environment:** Default EE with Ansible 2.15+
 
-```yaml
-# Cluster Identification
-cluster_name: your-redis-cluster.example.com
-cluster_master: your-master-node.prod.example.com
+3. **Credentials (Optional but Recommended)**
+   - **GitHub Personal Access Token** (for PR creation)
+   - Pass as extra variable: `github_token`
 
-# Version Information
-redis_version: "7.8.6-60"
-bdb_version: "7.4.0"
+4. **Survey Enabled**
+   - Survey collects all required configuration inputs
+   - See [SURVEY_SETUP.md](SURVEY_SETUP.md) for complete survey configuration
 
-# Git Repository
-git_repo_url: "git@github.com:yourorg/redis-configs.git"
+### How to Launch
 
-# Vault Secrets (reference your Ansible Vault)
-vault_cluster_admin_password: "{{ vault_cluster_admin_password }}"
-vault_bind_pass: "{{ vault_bind_pass }}"
-```
+1. Navigate to **Resources → Templates** in AAP
+2. Find **LG: Redis Configuration Generator**
+3. Click **Launch** button
+4. Fill out the survey with cluster details:
+   - Cluster information (name, master nodes)
+   - Environment (development, staging, production)
+   - Redis and BDB versions
+   - Database configuration (memory, ports, sharding)
+   - Git repository URL
+   - GitHub settings (PR creation, token)
+5. Click **Next** → **Launch**
+6. Monitor job execution in real-time
+7. Copy PR URL from job output
 
-### 3. Run Everything in One Command
+---
 
-Execute the playbook - it will check prerequisites, generate config, and create PR:
+## 📋 Survey Variables
 
-```bash
-# With vault password prompt
-ansible-playbook create_pr_for_redis.yml \
-  -e @my_cluster_vars.yml \
-  -e @redis_secrets.yml \
-  --ask-vault-pass
+### Cluster Information
+| Variable | Description | Example | Required |
+|----------|-------------|---------|----------|
+| `cluster_name` | Primary cluster hostname | `mbf-redis-XXX.example.com` | ✓ |
+| `cluster_master` | Primary master node | `lmbfXXXa.prod.example.com` | ✓ |
+| `cluster_name_active` | Active/DR cluster hostname | `mbf-redis-XXX-dr.example.com` | Optional |
+| `cluster_master_active` | Active/DR master node | `lmbfXXXb.prod.example.com` | Optional |
 
-# With vault password file
-ansible-playbook create_pr_for_redis.yml \
-  -e @my_cluster_vars.yml \
-  -e @redis_secrets.yml \
-  --vault-password-file ~/.vault_pass
+### Environment & Versions
+| Variable | Description | Example | Required |
+|----------|-------------|---------|----------|
+| `environment` | Target environment | `development`, `staging`, `production` | ✓ |
+| `redis_version` | Redis Enterprise version | `7.8.6-60` | ✓ |
+| `bdb_version` | Database version | `7.4.0` | ✓ |
+| `featureset_version` | Feature set version | `8` | ✓ |
 
-# Dry run to see what would happen
-ansible-playbook create_pr_for_redis.yml \
-  -e @my_cluster_vars.yml \
-  -e @redis_secrets.yml \
-  --ask-vault-pass \
-  --check
-```
+### Database Configuration
+| Variable | Description | Example | Required |
+|----------|-------------|---------|----------|
+| `database_name` | Database name | `mbf` | ✓ |
+| `database_port` | Database port | `10000` | ✓ |
+| `memory_size_gb` | Memory allocation in GB | `8` | ✓ |
+| `sharding_enabled` | Enable sharding | `true`, `false` | ✓ |
+| `shards_count` | Number of shards | `1` | If sharding enabled |
+| `replication_enabled` | Enable replication | `true`, `false` | ✓ |
+| `tls_mode` | TLS configuration | `enabled`, `disabled` | ✓ |
+| `data_persistence` | Data persistence mode | `enabled`, `disabled` | ✓ |
+| `slave_ha_enabled` | Enable slave HA | `enabled`, `disabled` | ✓ |
 
-The playbook will automatically:
-- ✓ Check all prerequisites (git, python3, GitHub CLI)
-- ✓ Validate your configuration
-- ✓ Generate the Redis cluster config file
-- ✓ Create a git branch, commit, and push
-- ✓ Create a Pull Request (if GitHub CLI available)
+### Git & GitHub Settings
+| Variable | Description | Example | Required |
+|----------|-------------|---------|----------|
+| `git_repo_url` | Target repository URL | `https://github.com/org/redis-configs.git` | ✓ |
+| `git_default_branch` | Base branch for PRs | `main` | Default: `main` |
+| `create_pull_request` | Create PR automatically | `yes`, `no` | Default: `yes` |
+| `github_token` | GitHub API token | `ghp_xxxxx` | For PR creation |
+| `pr_reviewers_list` | Comma-separated reviewers | `user1,user2` | Optional |
 
-## What the Automation Does
-
-1. **Checks prerequisites** - git, python3, GitHub CLI availability
-2. **Validates SSH access** - tests connection to git repository
-3. **Validates variables** - ensures all required variables are present
-4. **Clones** the git repository
-5. **Creates** a new feature branch with timestamp
-6. **Generates** Redis configuration from template
-7. **Validates** the generated YAML syntax
-8. **Commits** the configuration file
-9. **Pushes** to remote repository
-10. **Creates** a Pull Request (if GitHub CLI available)
-
-## Configuration Variables Reference
-
-### Core Cluster Settings
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `cluster_name` | Primary cluster hostname | `mbf-redis-001.example.com` |
-| `cluster_master` | Primary master node | `lmbf001a.prod.example.com` |
-| `cluster_name_active` | Active/DR cluster hostname | `mbf-redis-002.example.com` |
-| `cluster_master_active` | Active/DR master node | `lmbf002a.prod.example.com` |
-
-### Version Settings
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `redis_version` | Redis Enterprise version | `7.8.6-60` |
-| `bdb_version` | Database version | `7.4.0` |
-| `featureset_version` | Feature set version | `8` |
-
-### High Availability Settings
-
+### Advanced Settings (Defaults Provided)
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `slave_ha_enabled` | Enable slave HA | `enabled` |
-| `slave_ha_grace_period` | Grace period in seconds | `120` |
-| `slave_ha_cooldown_period` | Cooldown period in seconds | `240` |
-| `slave_ha_bdb_cooldown_period` | BDB cooldown in seconds | `360` |
+| `slave_ha_grace_period` | HA grace period (seconds) | `120` |
+| `slave_ha_cooldown_period` | HA cooldown period (seconds) | `240` |
+| `slave_ha_bdb_cooldown_period` | BDB cooldown period (seconds) | `360` |
 
-### Git & PR Settings
+---
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `git_repo_url` | Repository URL | `git@github.com:org/repo.git` |
-| `git_branch_prefix` | Branch name prefix | `redis-deployment` |
-| `pr_title_prefix` | PR title prefix | `Redis Cluster Deployment` |
-| `pr_reviewers` | List of reviewers | `['user1', 'user2']` |
-| `pr_labels` | PR labels | `['redis', 'infrastructure']` |
+## 🔄 Workflow
 
-## Generated Output
+### Automated Process
+
+```mermaid
+graph LR
+    A[User Launches Job] --> B[Fill Survey]
+    B --> C[Job Execution Starts]
+    C --> D[Validate Prerequisites]
+    D --> E[Clone Git Repository]
+    E --> F[Create Feature Branch]
+    F --> G[Generate Configuration]
+    G --> H[Validate YAML]
+    H --> I[Commit & Push]
+    I --> J[Create GitHub PR]
+    J --> K[Display PR URL]
+```
+
+### What the Job Does
+
+1. **Prerequisite Checks**
+   - Validates git, python3, PyYAML availability
+   - Checks GitHub token if PR creation enabled
+
+2. **Git Operations**
+   - Configures git credentials using provided token
+   - Clones target repository
+   - Creates timestamped feature branch
+
+3. **Configuration Generation**
+   - Applies survey inputs to Jinja2 template
+   - Generates Redis cluster configuration file
+   - Validates YAML syntax
+
+4. **Git Workflow**
+   - Stages generated configuration file
+   - Commits with descriptive message
+   - Pushes branch to remote repository
+
+5. **Pull Request Creation**
+   - Calls GitHub API to create PR
+   - Sets PR title and detailed description
+   - Adds reviewers if specified
+   - Outputs PR URL for review
+
+---
+
+## 📁 Generated Output
 
 ### File Naming Convention
 ```
 redis_cluster_<sanitized_cluster_name>_<timestamp>.yml
 ```
 
-Example: `redis_cluster_mbf_redis_001_example_com_1697472000.yml`
+**Example:**
+```
+redis_cluster_mbf_redis_XXX_example_com_1760660319.yml
+```
 
 ### Output Location
 ```
-<git_repo_local_path>/deployments/<generated_filename>
+<git_repo>/deployments/redis_cluster_<name>_<timestamp>.yml
 ```
 
-## Workflow After PR Creation
-
-1. **Review**: Team members review the generated configuration
-2. **Approve**: Required approvals obtained
-3. **Merge**: PR merged to main branch
-4. **Deploy**: Use the merged file for cluster deployment:
-
-```bash
-ansible-playbook deployments/redis_cluster_<name>_<timestamp>.yml \
-  --ask-vault-pass
+### Git Branch Naming
+```
+redis-deployment-<cluster-name>-<timestamp>
 ```
 
-## Advanced Usage
-
-### Custom Templates
-
-Modify the Jinja2 template for specific needs:
-
-```bash
-vi templates/redis_cluster_config.yml.j2
+**Example:**
+```
+redis-deployment-mbf-redis-XXX-example-com-1760660319
 ```
 
-### Multiple Environments
+---
 
-Create separate vars files per environment:
+## 🔐 GitHub Authentication
 
-```bash
-├── vars/
-│   ├── dev_cluster.yml
-│   ├── staging_cluster.yml
-│   └── prod_cluster.yml
+### Personal Access Token Setup
+
+1. **Create Token in GitHub**
+   - Go to GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic)
+   - Click "Generate new token (classic)"
+   - Set expiration (90 days recommended)
+   - Select scopes:
+     - ✓ `repo` (Full control of private repositories)
+     - ✓ `workflow` (if needed for GitHub Actions)
+
+2. **Store in AAP**
+   - Option 1: Pass as extra variable `github_token` when launching
+   - Option 2: Create custom credential type in AAP
+   - **Never commit tokens to git!**
+
+3. **Token Usage**
+   - Playbook automatically embeds token in git URL for HTTPS authentication
+   - Token used for GitHub API PR creation
+   - Token is masked in job output (`no_log` during debugging)
+
+---
+
+## 📊 Job Output
+
+### Successful Execution
+```
+✓ All prerequisites passed
+✓ Configuration generated: redis_cluster_mbf_redis_XXX_example_com_1760660319.yml
+✓ YAML validation: PASSED
+✓ Branch created: redis-deployment-mbf-redis-XXX-example-com-1760660319
+✓ Changes committed and pushed
+✓ Pull Request created successfully!
+
+PR #42: Redis Cluster Deployment: mbf-redis-XXX.example.com (development)
+URL: https://github.com/org/redis-configs/pull/42
+Status: open
 ```
 
-Run with specific environment:
+### Without GitHub Token
+```
+⚠ Pull Request not created automatically
+Reason: GitHub token not provided
 
-```bash
-ansible-playbook create_pr_for_redis.yml -e @vars/prod_cluster.yml
+Please create the PR manually:
+  Repository: https://github.com/org/redis-configs.git
+  Branch: redis-deployment-mbf-redis-XXX-example-com-1760660319
+  Title: Redis Cluster Deployment: mbf-redis-XXX.example.com (development)
+  URL: https://github.com/org/redis-configs/compare/main...redis-deployment-xxx?expand=1
+
+✓ Configuration file generated and pushed successfully
 ```
 
-### CI/CD Integration
+---
 
-Integrate into Jenkins/GitLab CI:
+## 🛠️ Troubleshooting
 
-```yaml
-# .gitlab-ci.yml example
-generate_redis_config:
-  stage: generate
-  script:
-    - ansible-playbook create_pr_for_redis.yml 
-        -e @vars/${ENVIRONMENT}.yml 
-        -e @secrets.yml 
-        --vault-password-file $VAULT_PASS_FILE
-  only:
-    - schedules
+### Job Fails at "Clone git repository"
+
+**Symptoms:**
+- Job hangs or fails with authentication error
+- Error: `Permission denied (publickey)` or `Authentication failed`
+
+**Solution:**
+1. Ensure `github_token` is provided and valid
+2. Verify token has `repo` scope permissions
+3. Check token hasn't expired
+4. Confirm repository URL is correct
+
+### Job Fails at "Create Pull Request"
+
+**Symptoms:**
+- Configuration generated and pushed successfully
+- PR creation fails with API error
+
+**Debug Steps:**
+1. Check GitHub API error in job output
+2. Verify token has required permissions
+3. Confirm base branch (`main`) exists in repository
+4. Check if branch protection rules allow PRs
+5. Verify repository owner/name extraction from URL
+
+**Common API Errors:**
+- `401 Unauthorized` - Invalid or expired token
+- `404 Not Found` - Repository doesn't exist or token lacks access
+- `422 Unprocessable Entity` - PR already exists or validation error
+
+### YAML Validation Fails
+
+**Symptoms:**
+- Job fails at "Validate generated YAML file"
+
+**Solution:**
+1. Check template file: `templates/redis_cluster_config.yml.j2`
+2. Review survey inputs for special characters
+3. Examine generated file in job output
+4. Verify all required variables provided
+
+### Variable Undefined Errors
+
+**Symptoms:**
+- `AnsibleUndefinedVariable: 'variable_name' is undefined`
+
+**Solution:**
+1. Check survey configuration - ensure field is present
+2. Verify variable name matches playbook expectations
+3. Review default values in playbook `vars` section
+4. Confirm extra variables syntax if providing manual overrides
+
+---
+
+## 📂 Files Structure
+
+```
+redis/
+├── create_pr_for_redis_aap.yml        # Main AAP playbook
+├── example_vars.yml                   # Example variables (reference only)
+├── requirements.yml                   # Required Ansible collections
+├── templates/
+│   └── redis_cluster_config.yml.j2    # Configuration template
+├── README.md                          # This file
+└── SURVEY_SETUP.md                    # AAP survey configuration guide
 ```
 
-### Skip PR Creation
+---
 
-To only generate and commit without PR:
+## 🔧 Customization
 
-```bash
-ansible-playbook create_pr_for_redis.yml \
-  -e @my_cluster_vars.yml \
-  --skip-tags create_pr
-```
+### Template Modifications
 
-## Troubleshooting
+To modify the generated Redis configuration format:
 
-### Git Authentication Issues
+1. Edit `templates/redis_cluster_config.yml.j2`
+2. Test changes locally or in dev AAP environment
+3. Commit template changes to git
+4. AAP project will sync updated template
 
-```bash
-# Test SSH connection
-ssh -T git@github.com
+### Default Values
 
-# Check SSH keys
-ssh-add -l
+Default values are defined in the playbook's `vars` section:
+- HA grace periods
+- LDAP URLs
+- Default passwords (should be overridden!)
 
-# Add SSH key
-ssh-add ~/.ssh/id_rsa
-```
+**Location:** Lines 10-23 in `create_pr_for_redis_aap.yml`
 
-### GitHub CLI Not Authenticated
+### Adding New Variables
 
-```bash
-# Login to GitHub
-gh auth login
+1. Add variable to playbook `vars` section with default
+2. Update survey to collect user input
+3. Add variable to Jinja2 template as needed
+4. Update this README documentation
 
-# Check auth status
-gh auth status
-```
+---
 
-### YAML Validation Errors
+## 🔒 Security Best Practices
 
-```bash
-# Manually validate generated file
-python3 -c "import yaml; yaml.safe_load(open('path/to/file.yml'))"
+1. **GitHub Tokens**
+   - Use tokens with minimum required scopes
+   - Set token expiration (90 days)
+   - Rotate tokens regularly
+   - Never commit tokens to git
 
-# Check with yamllint
-yamllint path/to/file.yml
-```
+2. **Sensitive Data**
+   - Use Ansible Vault for passwords
+   - Pass secrets via AAP credentials
+   - Review generated configs before merging
 
-### Repository Clone Issues
+3. **Repository Access**
+   - Limit who can launch AAP jobs
+   - Enable branch protection on target repo
+   - Require PR reviews before merge
 
-```bash
-# Verify repository access
-git ls-remote <your_repo_url>
+4. **Audit Trail**
+   - AAP logs all job executions
+   - Git history tracks all configuration changes
+   - PRs provide review and approval workflow
 
-# Check repository URL in vars file
-grep git_repo_url my_cluster_vars.yml
-```
+---
 
-**Job hangs on "Clone git repository" in AAP:**
-- This happens when cloning a private repository without authentication
-- See [GIT_AUTHENTICATION.md](GIT_AUTHENTICATION.md) for how to configure GitHub token authentication
-- The playbook automatically configures git credentials when a token is provided
-- Supports both SSH keys and HTTPS with tokens
+## 📖 Additional Documentation
 
-## Security Best Practices
+- **[SURVEY_SETUP.md](SURVEY_SETUP.md)** - Complete AAP survey configuration
+- **[example_vars.yml](example_vars.yml)** - Example variable structure
+- **[requirements.yml](requirements.yml)** - Required Ansible collections
 
-1. **Always use Ansible Vault** for sensitive data
-2. **Never commit vault passwords** to git
-3. **Rotate credentials** regularly
-4. **Limit repository access** to authorized personnel
-5. **Review PRs** before merging to production
-6. **Enable branch protection** on main branch
+---
 
-## Support & Contributing
+## 📞 Support
 
-### Logging
+**For Issues:**
+- Job failures: Check AAP job output and this troubleshooting section
+- Template issues: Review `templates/redis_cluster_config.yml.j2`
+- GitHub API issues: Verify token and permissions
 
-Playbook execution creates detailed output. Capture for debugging:
+**Resources:**
+- GitHub API Documentation: https://docs.github.com/en/rest
+- AAP Documentation: https://access.redhat.com/documentation/en-us/red_hat_ansible_automation_platform
+- Repository: File issues via GitHub
 
-```bash
-ansible-playbook create_pr_for_redis.yml \
-  -e @vars.yml \
-  -vvv > playbook_run.log 2>&1
-```
+---
 
-### Common Issues
-
-- **Missing variables**: Check vars file for all required fields
-- **Git conflicts**: Ensure repository is clean before running
-- **Permission denied**: Verify SSH keys and repository access
-- **YAML syntax errors**: Validate your vars file before running
-
-## Example Complete Workflow
-
-```bash
-# 1. Clone this repository
-git clone <this-repo>
-cd redis
-
-# 2. Create your vars file
-cp example_vars.yml prod_cluster_001.yml
-vi prod_cluster_001.yml  # Edit as needed
-
-# 3. Create secrets vault
-ansible-vault create secrets.yml
-# Add your passwords
-
-# 4. Run automation
-ansible-playbook create_pr_for_redis.yml \
-  -e @prod_cluster_001.yml \
-  -e @secrets.yml \
-  --ask-vault-pass
-
-# 5. Review PR in GitHub
-# Open the PR URL from the output
-
-# 6. After approval and merge, deploy
-cd <config-repo>
-git pull origin main
-ansible-playbook deployments/redis_cluster_prod_001_*.yml \
-  -e @secrets.yml \
-  --ask-vault-pass
-```
-
-## License
-
-Internal use only - [Your Organization]
-
-## Contact
-
-For questions or issues:
-- Team: Redis Infrastructure Team
-- Email: redis-team@example.com
-- Slack: #redis-automation
-
+*Designed for Ansible Automation Platform - No CLI interaction required*
