@@ -39,7 +39,7 @@ This automation provides:
 
 4. **Survey Enabled**
    - Survey collects all required configuration inputs
-   - See [SURVEY_SETUP.md](SURVEY_SETUP.md) for complete survey configuration
+   - Refer to survey variables section below for complete field list
 
 ### How to Launch
 
@@ -305,8 +305,7 @@ redis/
 ├── requirements.yml                   # Required Ansible collections
 ├── templates/
 │   └── redis_cluster_config.yml.j2    # Configuration template
-├── README.md                          # This file
-└── SURVEY_SETUP.md                    # AAP survey configuration guide
+└── README.md                          # This file
 ```
 
 ---
@@ -367,9 +366,9 @@ Default values are defined in the playbook's `vars` section:
 
 ## 📖 Additional Documentation
 
-- **[SURVEY_SETUP.md](SURVEY_SETUP.md)** - Complete AAP survey configuration
 - **[example_vars.yml](example_vars.yml)** - Example variable structure
 - **[requirements.yml](requirements.yml)** - Required Ansible collections
+- **[templates/redis_cluster_config.yml.j2](templates/redis_cluster_config.yml.j2)** - Configuration template
 
 ---
 
