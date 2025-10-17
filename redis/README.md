@@ -41,22 +41,6 @@ This automation provides:
    - Survey collects all required configuration inputs
    - Refer to survey variables section below for complete field list
 
-### How to Launch
-
-1. Navigate to **Resources → Templates** in AAP
-2. Find **LG: Redis Configuration Generator**
-3. Click **Launch** button
-4. Fill out the survey with cluster details:
-   - Cluster information (name, master nodes)
-   - Environment (development, staging, production)
-   - Redis and BDB versions
-   - Database configuration (memory, ports, sharding)
-   - Git repository URL
-   - GitHub settings (PR creation, token)
-5. Click **Next** → **Launch**
-6. Monitor job execution in real-time
-7. Copy PR URL from job output
-
 ---
 
 ## Survey Variables
