@@ -1,0 +1,159 @@
+---
+- name: CyberArk PAS Integration Examples
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - cyberark.pas
+
+  vars:
+    # CyberArk PVWA (Password Vault Web Access) URL
+    cyberark_pvwa_url: "https://pvwa.example.com"
+    
+    # Application ID for credential retrieval
+    cyberark_app_id: "AnsibleApp"
+    
+    # Safe and account details
+    target_safe: "LinuxServers"
+    target_account: "root"
+    target_address: "server1.example.com"
+
+  tasks:
+    # =====================================================
+    # Authentication to CyberArk Vault
+    # =====================================================
+    - name: Authenticate to CyberArk Vault
+      cyberark_authentication:
+        api_base_url: "{{ cyberark_pvwa_url }}"
+        username: "{{ vault_username }}"
+        password: "{{ vault_password }}"
+        use_shared_logon_authentication: false
+      register: cyberark_session
+      no_log: true
+
+    - name: Display authentication status
+      debug:
+        msg: "Successfully authenticated to CyberArk Vault"
+
+    # =====================================================
+    # Retrieve Credentials from Static Safe
+    # =====================================================
+    - name: Retrieve account credentials from static safe
+      cyberark_account:
+        api_base_url: "{{ cyberark_pvwa_url }}"
+        cyberark_session: "{{ cyberark_session }}"
+        state: retrieve
+        safe: "{{ target_safe }}"
+        platform_id: "UnixSSH"
+        username: "{{ target_account }}"
+        address: "{{ target_address }}"
+      register: retrieved_account
+      no_log: true
+
+    - name: Display account retrieval status (password masked)
+      debug:
+        msg: 
+          - "Account retrieved successfully"
+          - "Account ID: {{ retrieved_account.result.id | default('N/A') }}"
+          - "Safe: {{ retrieved_account.result.safeName | default('N/A') }}"
+
+    # =====================================================
+    # Alternative: Retrieve Credentials via CCP
+    # =====================================================
+    - name: Retrieve credentials using Central Credential Provider
+      cyberark_credential:
+        api_base_url: "{{ cyberark_pvwa_url }}/AIMWebService"
+        app_id: "{{ cyberark_app_id }}"
+        query: "Safe={{ target_safe }};UserName={{ target_account }};Address={{ target_address }}"
+        validate_certs: true
+      register: ccp_credential
+      no_log: true
+
+    - name: Use retrieved credentials in subsequent tasks
+      debug:
+        msg: "Credentials retrieved via CCP for use in automation"
+
+    # =====================================================
+    # Create/Update Account in Safe
+    # =====================================================
+    - name: Add or update account in CyberArk safe
+      cyberark_account:
+        api_base_url: "{{ cyberark_pvwa_url }}"
+        cyberark_session: "{{ cyberark_session }}"
+        state: present
+        safe: "{{ target_safe }}"
+        platform_id: "UnixSSH"
+        username: "ansible_user"
+        address: "webserver1.example.com"
+        secret: "{{ new_password }}"
+        secret_type: "password"
+        platform_account_properties:
+          LogonDomain: ""
+          Port: 22
+        remote_machines_access:
+          remote_machines: "webserver1.example.com"
+          access_restricted_to_remote_machines: true
+      register: account_created
+      no_log: true
+
+    - name: Display account creation result
+      debug:
+        msg: "Account successfully added/updated in safe: {{ target_safe }}"
+
+    # =====================================================
+    # Manage CyberArk Users
+    # =====================================================
+    - name: Create CyberArk user
+      cyberark_user:
+        api_base_url: "{{ cyberark_pvwa_url }}"
+        cyberark_session: "{{ cyberark_session }}"
+        state: present
+        username: "automation_user"
+        initial_password: "{{ initial_password }}"
+        user_type_name: "EPVUser"
+        change_password_on_the_next_logon: true
+        location: "\\VaultUsers"
+        expiry_date: "12/31/2025"
+        disabled: false
+      register: user_created
+      no_log: true
+
+    - name: Display user creation result
+      debug:
+        msg: "User automation_user successfully created/updated"
+
+    # =====================================================
+    # Practical Example: Use Retrieved Credentials
+    # =====================================================
+    - name: Use CyberArk credentials to connect to remote host
+      delegate_to: "{{ target_address }}"
+      ansible.builtin.shell: "whoami"
+      vars:
+        ansible_user: "{{ ccp_credential.result.UserName }}"
+        ansible_password: "{{ ccp_credential.result.Content }}"
+        ansible_become: true
+      register: remote_result
+      when: ccp_credential is defined and ccp_credential.result is defined
+
+    - name: Display remote command result
+      debug:
+        var: remote_result.stdout
+      when: remote_result is defined
+
+    # =====================================================
+    # Logoff from CyberArk Vault
+    # =====================================================
+    - name: Logoff from CyberArk Vault
+      uri:
+        url: "{{ cyberark_pvwa_url }}/PasswordVault/API/Auth/Logoff"
+        method: POST
+        headers:
+          Authorization: "{{ cyberark_session.cyberark_session.token }}"
+        validate_certs: true
+        status_code: [200, 204]
+      when: cyberark_session is defined
+      ignore_errors: true
+
+    - name: Cleanup complete
+      debug:
+        msg: "CyberArk session closed successfully"
+

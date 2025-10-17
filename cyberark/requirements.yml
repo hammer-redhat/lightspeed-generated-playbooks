@@ -1,0 +1,7 @@
+---
+# Ansible Collections required for CyberArk automation
+collections:
+  - name: cyberark.pas
+    version: ">=1.0.35"
+    source: https://galaxy.ansible.com
+

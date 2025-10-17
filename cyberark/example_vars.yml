@@ -1,0 +1,32 @@
+---
+# CyberArk Configuration Variables
+# These values should be customized for your environment
+
+# CyberArk PVWA (Password Vault Web Access) URL
+cyberark_pvwa_url: "https://pvwa.example.com"
+
+# Credentials for CyberArk authentication
+# IMPORTANT: Store these securely using Ansible Vault
+vault_username: "vault_admin"
+vault_password: "{{ lookup('env', 'CYBERARK_PASSWORD') }}"  # Use environment variable or Ansible Vault
+
+# Application ID for CCP (Central Credential Provider) access
+cyberark_app_id: "AnsibleApp"
+
+# Target safe and account information
+target_safe: "LinuxServers"
+target_account: "root"
+target_address: "server1.example.com"
+
+# New account credentials (for account creation example)
+new_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits,punctuation') }}"
+
+# User management variables
+initial_password: "{{ lookup('password', '/dev/null length=16 chars=ascii_letters,digits') }}"
+
+# SSL/TLS validation
+validate_certs: true
+
+# Connection timeout (in seconds)
+connection_timeout: 30
+
