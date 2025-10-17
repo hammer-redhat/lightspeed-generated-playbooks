@@ -197,43 +197,20 @@
         msg: "✓ PyYAML is installed"
       when: pyyaml_check.rc == 0
 
-    - name: Check if GitHub CLI is installed
-      ansible.builtin.command: gh --version
-      register: gh_version_check
-      changed_when: false
-      failed_when: false
-      when: create_pull_request == 'yes'
-
-    - name: Display GitHub CLI status
+    - name: Check GitHub token for PR creation
       ansible.builtin.debug:
-        msg: "✓ GitHub CLI is installed: {{ gh_version_check.stdout_lines[0] }}"
+        msg: "✓ GitHub token provided - PRs will be created automatically"
       when: 
         - create_pull_request == 'yes'
-        - gh_version_check.rc == 0
-
-    - name: Check GitHub CLI authentication
-      ansible.builtin.command: gh auth status
-      register: gh_auth_check
-      changed_when: false
-      failed_when: false
-      when: 
-        - create_pull_request == 'yes'
-        - gh_version_check.rc == 0
-
-    - name: Display GitHub CLI auth status
-      ansible.builtin.debug:
-        msg: "✓ GitHub CLI is authenticated"
-      when: 
-        - create_pull_request == 'yes'
-        - gh_version_check.rc == 0
-        - gh_auth_check.rc == 0
+        - github_token | length > 0
 
     - name: Warn about PR creation
       ansible.builtin.debug:
         msg: |
-          ⚠ Pull Request creation disabled by survey choice or GitHub CLI not available
+          ⚠ Pull Request will not be created automatically
+          Reason: {{ 'PR creation disabled in survey' if create_pull_request == 'no' else 'GitHub token not provided' }}
           Branch will be pushed but PR must be created manually
-      when: create_pull_request == 'no' or gh_version_check.rc != 0
+      when: create_pull_request == 'no' or github_token | length == 0
 
     - name: Prerequisite check complete
       ansible.builtin.debug:
@@ -393,30 +370,42 @@
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
 
-    - name: Create Pull Request using GitHub CLI
-      ansible.builtin.command:
-        cmd: >
-          gh pr create
-          --title "{{ pr_title }}"
-          --body "{{ pr_body }}"
-          --base main
-          --head {{ git_branch_name }}
-          {% if pr_labels | length > 0 %}--label {{ pr_labels | join(',') }}{% endif %}
-          {% if pr_reviewers | length > 0 %}--reviewer {{ pr_reviewers | join(',') }}{% endif %}
-        chdir: "{{ git_repo_local_path }}"
-      register: pr_create
+    - name: Extract GitHub repository owner and name from URL
+      ansible.builtin.set_fact:
+        github_repo_owner: "{{ git_repo_url | regex_replace('^https://github\\.com/([^/]+)/.*$', '\\1') | regex_replace('^git@github\\.com:([^/]+)/.*$', '\\1') }}"
+        github_repo_name: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
       when: 
         - create_pull_request == 'yes'
-        - gh_version_check is defined
-        - gh_version_check.rc == 0
-        - gh_auth_check is defined
-        - gh_auth_check.rc == 0
+        - github_token | length > 0
+
+    - name: Create Pull Request using GitHub API
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ github_repo_owner }}/{{ github_repo_name }}/pulls"
+        method: POST
+        headers:
+          Authorization: "token {{ github_token }}"
+          Accept: "application/vnd.github.v3+json"
+        body_format: json
+        body:
+          title: "{{ pr_title }}"
+          body: "{{ pr_body }}"
+          head: "{{ git_branch_name }}"
+          base: "{{ git_default_branch }}"
+        status_code: 201
+        return_content: yes
+      register: pr_create
+      no_log: true
+      when: 
+        - create_pull_request == 'yes'
+        - github_token | length > 0
 
     - name: Display PR creation result
       ansible.builtin.debug:
         msg: 
           - "✓ Pull Request created successfully!"
-          - "{{ pr_create.stdout }}"
+          - "PR #{{ pr_create.json.number }}: {{ pr_create.json.title }}"
+          - "URL: {{ pr_create.json.html_url }}"
+          - "Status: {{ pr_create.json.state }}"
       when: 
         - create_pull_request == 'yes'
         - pr_create is defined
@@ -427,13 +416,17 @@
       ansible.builtin.debug:
         msg:
           - "⚠ Pull Request not created automatically"
+          - "Reason: {{ 'PR creation disabled' if create_pull_request == 'no' else 'GitHub token not provided or invalid' }}"
+          - ""
           - "Please create the PR manually:"
           - "  Repository: {{ git_repo_url }}"
           - "  Branch: {{ git_branch_name }}"
           - "  Title: {{ pr_title }}"
+          - "  URL: https://github.com/{{ github_repo_owner | default('OWNER') }}/{{ github_repo_name | default('REPO') }}/compare/{{ git_default_branch }}...{{ git_branch_name }}?expand=1"
           - ""
-          - "✓ Branch pushed successfully to remote"
-      when: create_pull_request == 'no' or (pr_create is defined and pr_create is not succeeded) or gh_version_check.rc != 0
+          - "✓ Configuration file generated and pushed successfully"
+      when: 
+        - pr_create is skipped or (pr_create is defined and pr_create is failed)
 
     - name: Cleanup temporary repository
       ansible.builtin.file:
