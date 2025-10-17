@@ -32,6 +32,7 @@
     output_dir: "{{ git_repo_local_path }}/deployments"
     
     # Git configuration
+    git_default_branch: "main"  # Default branch for PRs (override if repo uses 'master' or other)
     git_branch_name: "{{ git_branch_prefix }}-{{ cluster_name | regex_replace('[^a-zA-Z0-9]', '-') }}-{{ ansible_date_time.epoch }}"
     pr_title: "Redis Cluster Deployment: {{ cluster_name }} ({{ environment }})"
     pr_body: |
