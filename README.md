@@ -6,7 +6,7 @@ Ansible automation playbooks designed for **Ansible Automation Platform (AAP)**,
 
 ---
 
-## 📌 Overview
+## Overview
 
 The **lightspeed-generated-playbooks** repository houses Ansible playbooks optimized for Ansible Automation Platform. These playbooks provide:
 
@@ -20,7 +20,7 @@ All playbooks are designed to run directly from AAP with no CLI interaction requ
 
 ---
 
-## 🚀 Available Automations
+## Available Automations
 
 ### Redis Configuration
 **Path:** `redis/`  
@@ -83,7 +83,7 @@ Azure VM resize operations.
 
 ---
 
-## 🛠️ Prerequisites
+## Prerequisites
 
 ### For AAP Execution
 - Ansible Automation Platform 2.4+
@@ -102,7 +102,7 @@ Azure VM resize operations.
 
 ---
 
-## 📂 Repository Structure
+## Repository Structure
 
 ```
 lightspeed-generated-playbooks/
@@ -126,7 +126,7 @@ lightspeed-generated-playbooks/
 
 ---
 
-## 🎯 Usage in Ansible Automation Platform
+## Usage in Ansible Automation Platform
 
 ### Job Template Setup
 
@@ -157,7 +157,7 @@ The survey collects all necessary inputs including cluster details, versions, da
 
 ---
 
-## 🔧 Development & Testing
+## Development & Testing
 
 ### Local Testing (Optional)
 
@@ -188,7 +188,7 @@ ansible-playbook redis/create_pr_for_redis_aap.yml \
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 Each automation includes its own README with:
 - Detailed variable documentation
@@ -198,7 +198,7 @@ Each automation includes its own README with:
 
 ---
 
-## 🔒 Security Best Practices
+## Security Best Practices
 
 - **Use AAP Credentials** - Store all sensitive data in AAP credential types
 - **GitHub Tokens** - Use personal access tokens with minimal required scopes
@@ -209,7 +209,7 @@ Each automation includes its own README with:
 
 ---
 
-## 📞 Support
+## Support
 
 For questions or issues:
 - **Repository:** File GitHub issues
@@ -218,7 +218,7 @@ For questions or issues:
 
 ---
 
-## 🏷️ Labels
+## Labels
 
 Use these labels in AAP for organization:
 - `ai` - AI-assisted playbook generation

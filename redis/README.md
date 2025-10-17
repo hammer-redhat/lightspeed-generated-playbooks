@@ -4,7 +4,7 @@ Automated Redis cluster configuration generation designed for **Ansible Automati
 
 ---
 
-## 📌 Overview
+## Overview
 
 This automation provides:
 - **Template-based configuration generation** for Redis Enterprise clusters
@@ -19,7 +19,7 @@ This automation provides:
 
 ---
 
-## 🚀 Running from AAP
+## Running from AAP
 
 ### Prerequisites in AAP
 
@@ -59,7 +59,7 @@ This automation provides:
 
 ---
 
-## 📋 Survey Variables
+## Survey Variables
 
 ### Cluster Information
 | Variable | Description | Example | Required |
@@ -108,7 +108,7 @@ This automation provides:
 
 ---
 
-## 🔄 Workflow
+## Workflow
 
 ### Automated Process
 
@@ -155,7 +155,7 @@ graph LR
 
 ---
 
-## 📁 Generated Output
+## Generated Output
 
 ### File Naming Convention
 ```
@@ -184,7 +184,7 @@ redis-deployment-mbf-redis-XXX-example-com-1760660319
 
 ---
 
-## 🔐 GitHub Authentication
+## GitHub Authentication
 
 ### Personal Access Token Setup
 
@@ -193,13 +193,13 @@ redis-deployment-mbf-redis-XXX-example-com-1760660319
    - Click "Generate new token (classic)"
    - Set expiration (90 days recommended)
    - Select scopes:
-     - ✓ `repo` (Full control of private repositories)
-     - ✓ `workflow` (if needed for GitHub Actions)
+     - `repo` (Full control of private repositories)
+     - `workflow` (if needed for GitHub Actions)
 
 2. **Store in AAP**
    - Option 1: Pass as extra variable `github_token` when launching
    - Option 2: Create custom credential type in AAP
-   - **Never commit tokens to git!**
+   - Never commit tokens to git
 
 3. **Token Usage**
    - Playbook automatically embeds token in git URL for HTTPS authentication
@@ -208,16 +208,16 @@ redis-deployment-mbf-redis-XXX-example-com-1760660319
 
 ---
 
-## 📊 Job Output
+## Job Output
 
 ### Successful Execution
 ```
-✓ All prerequisites passed
-✓ Configuration generated: redis_cluster_mbf_redis_XXX_example_com_1760660319.yml
-✓ YAML validation: PASSED
-✓ Branch created: redis-deployment-mbf-redis-XXX-example-com-1760660319
-✓ Changes committed and pushed
-✓ Pull Request created successfully!
+All prerequisites passed
+Configuration generated: redis_cluster_mbf_redis_XXX_example_com_1760660319.yml
+YAML validation: PASSED
+Branch created: redis-deployment-mbf-redis-XXX-example-com-1760660319
+Changes committed and pushed
+Pull Request created successfully!
 
 PR #42: Redis Cluster Deployment: mbf-redis-XXX.example.com (development)
 URL: https://github.com/org/redis-configs/pull/42
@@ -226,7 +226,7 @@ Status: open
 
 ### Without GitHub Token
 ```
-⚠ Pull Request not created automatically
+WARNING: Pull Request not created automatically
 Reason: GitHub token not provided
 
 Please create the PR manually:
@@ -235,12 +235,12 @@ Please create the PR manually:
   Title: Redis Cluster Deployment: mbf-redis-XXX.example.com (development)
   URL: https://github.com/org/redis-configs/compare/main...redis-deployment-xxx?expand=1
 
-✓ Configuration file generated and pushed successfully
+Configuration file generated and pushed successfully
 ```
 
 ---
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Job Fails at "Clone git repository"
 
@@ -296,7 +296,7 @@ Please create the PR manually:
 
 ---
 
-## 📂 Files Structure
+## Files Structure
 
 ```
 redis/
@@ -310,7 +310,7 @@ redis/
 
 ---
 
-## 🔧 Customization
+## Customization
 
 ### Template Modifications
 
@@ -339,7 +339,7 @@ Default values are defined in the playbook's `vars` section:
 
 ---
 
-## 🔒 Security Best Practices
+## Security Best Practices
 
 1. **GitHub Tokens**
    - Use tokens with minimum required scopes
@@ -364,7 +364,7 @@ Default values are defined in the playbook's `vars` section:
 
 ---
 
-## 📖 Additional Documentation
+## Additional Documentation
 
 - **[example_vars.yml](example_vars.yml)** - Example variable structure
 - **[requirements.yml](requirements.yml)** - Required Ansible collections
@@ -372,7 +372,7 @@ Default values are defined in the playbook's `vars` section:
 
 ---
 
-## 📞 Support
+## Support
 
 **For Issues:**
 - Job failures: Check AAP job output and this troubleshooting section
