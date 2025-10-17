@@ -420,6 +420,7 @@
       when: 
         - create_pull_request == 'yes'
         - pr_create is defined
+        - pr_create is not skipped
         - pr_create is succeeded
 
     - name: Display manual PR creation instructions
