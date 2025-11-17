@@ -8,6 +8,9 @@
 # This playbook requires a Workspace Access Token or Personal Access Token
 # (NOT a Repository Access Token - those don't work for git operations)
 #
+# The playbook will automatically test both Bearer token and Basic Auth
+# methods and use whichever works with your token.
+#
 # How to create the correct token:
 #   1. Go to Bitbucket Workspace Settings → Access Tokens (or Personal Settings)
 #   2. Click "Create Access Token"
@@ -424,7 +427,8 @@
           ║  Bitbucket API Authentication Failed (401 Unauthorized)        ║
           ╚════════════════════════════════════════════════════════════════╝
           
-          The API token authentication failed. This usually means:
+          Both Bearer and Basic authentication methods failed!
+          This usually means:
           
           ⚠️  WRONG TOKEN TYPE - Repository Access Tokens don't work for git operations!
           
@@ -660,7 +664,36 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Create Pull Request using Bitbucket API
+    - name: Create Pull Request using Bitbucket API (Bearer auth)
+      ansible.builtin.uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ bitbucket_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          title: "{{ pr_title }}"
+          description: "{{ pr_body }}"
+          source:
+            branch:
+              name: "{{ git_branch_name }}"
+          destination:
+            branch:
+              name: "{{ git_default_branch }}"
+          close_source_branch: false
+        status_code: 201
+        return_content: yes
+      register: pr_create
+      ignore_errors: yes
+      no_log: false  # Temporarily disabled for debugging
+      when: 
+        - create_pull_request == 'yes'
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_method == 'bearer'
+
+    - name: Create Pull Request using Bitbucket API (Basic auth)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
         method: POST
@@ -689,6 +722,7 @@
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_method == 'basic'
 
     - name: Debug - Show API error if PR creation failed
       ansible.builtin.debug:
