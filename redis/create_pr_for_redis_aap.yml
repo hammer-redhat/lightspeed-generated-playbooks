@@ -372,6 +372,24 @@
         msg: "Git remote URL set to: {{ git_remote_url.stdout | regex_replace('(https://)([^:]+):([^@]+)(@.+)', '\\1\\2:***TOKEN***\\4') }}"
       when: git_remote_url is defined
 
+    - name: Check token format
+      ansible.builtin.set_fact:
+        token_prefix: "{{ bitbucket_api_token[:5] if bitbucket_api_token | length >= 5 else 'unknown' }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
+    - name: Display token type hint
+      ansible.builtin.debug:
+        msg:
+          - "Token prefix detected: {{ token_prefix }}***"
+          - "{{ 'WARNING: This looks like a Repository Access Token (ATATT prefix) - these do NOT work!' if token_prefix.startswith('ATATT') else 'Token format looks valid' }}"
+          - "{{ 'You need a Workspace or Personal Access Token instead!' if token_prefix.startswith('ATATT') else '' }}"
+      when: 
+        - token_prefix is defined
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
     - name: Test Bitbucket API authentication with Bearer token
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/user"
@@ -427,12 +445,20 @@
           ║  Bitbucket API Authentication Failed (401 Unauthorized)        ║
           ╚════════════════════════════════════════════════════════════════╝
           
-          Both Bearer and Basic authentication methods failed!
-          This usually means:
+          ❌ BOTH authentication methods failed!
+          {{ '   Token starts with: ' + token_prefix + '*** (Repository Access Token)' if token_prefix is defined and token_prefix.startswith('ATATT') else '' }}
           
-          ⚠️  WRONG TOKEN TYPE - Repository Access Tokens don't work for git operations!
+          Error from Bitbucket API:
+          "{{ bitbucket_auth_test.json.error.message if bitbucket_auth_test.json is defined and bitbucket_auth_test.json.error is defined else 'Token is invalid, expired, or not supported for this endpoint' }}"
           
-          You need to create a WORKSPACE ACCESS TOKEN or PERSONAL ACCESS TOKEN:
+          ⚠️  WRONG TOKEN TYPE CONFIRMED!
+          
+          Repository Access Tokens (ATATT...) do NOT work for:
+            ✗ API endpoint /2.0/user
+            ✗ Git push operations  
+            ✗ Pull request creation
+          
+          You MUST create a WORKSPACE ACCESS TOKEN or PERSONAL ACCESS TOKEN:
           
           ┌─────────────────────────────────────────────────────────────┐
           │ How to Create the Correct Token:                            │
@@ -458,10 +484,25 @@
           │                                                              │
           └─────────────────────────────────────────────────────────────┘
           
-          ❌ DON'T USE: Repository Access Tokens (they're scoped too narrowly)
+          ══════════════════════════════════════════════════════════════
+          IMPORTANT: Where to Create the Token
+          ══════════════════════════════════════════════════════════════
+          
+          ✅ CORRECT LOCATION:
+             Bitbucket Cloud → Your Workspace → Settings → Access Tokens
+             (NOT in Repository Settings!)
+          
+          ✅ OR: 
+             Bitbucket Cloud → Personal Settings → Access Tokens
+          
+          ❌ WRONG LOCATION:
+             Repository Settings → Access Tokens 
+             (These create Repository tokens that DON'T work!)
+          
+          ══════════════════════════════════════════════════════════════
           
           Current username: {{ bitbucket_username }}
-          Error: {{ bitbucket_auth_test.msg | default('Unknown error') }}
+          {{ 'Current token: ' + token_prefix + '*** (INVALID - Repository Access Token)' if token_prefix is defined and token_prefix.startswith('ATATT') else 'Token type: Unknown' }}
       when:
         - bitbucket_auth_test is defined
         - bitbucket_auth_test is failed
