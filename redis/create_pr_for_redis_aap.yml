@@ -369,7 +369,21 @@
         msg: "Git remote URL set to: {{ git_remote_url.stdout | regex_replace('(https://)([^:]+):([^@]+)(@.+)', '\\1\\2:***TOKEN***\\4') }}"
       when: git_remote_url is defined
 
-    - name: Test Bitbucket API authentication
+    - name: Test Bitbucket API authentication with Bearer token
+      ansible.builtin.uri:
+        url: "https://api.bitbucket.org/2.0/user"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ bitbucket_api_token }}"
+        status_code: 200
+      register: bitbucket_auth_test_bearer
+      ignore_errors: yes
+      no_log: false
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
+    - name: Test Bitbucket API authentication with Basic Auth (if Bearer failed)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/user"
         method: GET
@@ -377,16 +391,27 @@
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         status_code: 200
-      register: bitbucket_auth_test
+      register: bitbucket_auth_test_basic
       ignore_errors: yes
       no_log: false
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_test_bearer is failed
+
+    - name: Set authentication method based on test results
+      ansible.builtin.set_fact:
+        bitbucket_auth_test: "{{ bitbucket_auth_test_bearer if bitbucket_auth_test_bearer is succeeded else bitbucket_auth_test_basic }}"
+        bitbucket_auth_method: "{{ 'bearer' if bitbucket_auth_test_bearer is succeeded else 'basic' }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
     - name: Display API authentication result
       ansible.builtin.debug:
-        msg: "{{ 'Bitbucket API authentication: SUCCESS ✓' if bitbucket_auth_test is succeeded else 'Bitbucket API authentication: FAILED ✗ - Token may be invalid or expired' }}"
+        msg: 
+          - "Bitbucket API authentication: {{ 'SUCCESS ✓' if bitbucket_auth_test is succeeded else 'FAILED ✗' }}"
+          - "Authentication method: {{ bitbucket_auth_method | upper if bitbucket_auth_method is defined else 'N/A' }}"
       when: 
         - bitbucket_auth_test is defined
         - bitbucket_username | default('') | length > 0
@@ -447,7 +472,22 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Test repository access
+    - name: Test repository access (Bearer auth)
+      ansible.builtin.uri:
+        url: "https://api.bitbucket.org/2.0/repositories/{{ check_workspace }}/{{ check_repo_slug }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ bitbucket_api_token }}"
+        status_code: 200
+      register: repo_access_test
+      ignore_errors: yes
+      no_log: false
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_method == 'bearer'
+
+    - name: Test repository access (Basic auth)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ check_workspace }}/{{ check_repo_slug }}"
         method: GET
@@ -461,6 +501,7 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_method == 'basic'
 
     - name: Display repository access result
       ansible.builtin.debug:
