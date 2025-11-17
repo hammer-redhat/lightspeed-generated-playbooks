@@ -198,20 +198,21 @@
         msg: "✓ PyYAML is installed"
       when: pyyaml_check.rc == 0
 
-    - name: Check GitHub token for PR creation
+    - name: Check Bitbucket credentials for PR creation
       ansible.builtin.debug:
-        msg: "✓ GitHub token provided - PRs will be created automatically"
+        msg: "✓ Bitbucket credentials provided - PRs will be created automatically"
       when: 
         - create_pull_request == 'yes'
-        - github_token | length > 0
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
     - name: Warn about PR creation
       ansible.builtin.debug:
         msg: |
           ⚠ Pull Request will not be created automatically
-          Reason: {{ 'PR creation disabled in survey' if create_pull_request == 'no' else 'GitHub token not provided' }}
+          Reason: {{ 'PR creation disabled in survey' if create_pull_request == 'no' else 'Bitbucket credentials not provided' }}
           Branch will be pushed but PR must be created manually
-      when: create_pull_request == 'no' or github_token | length == 0
+      when: create_pull_request == 'no' or (bitbucket_username | default('') | length == 0) or (bitbucket_api_token | default('') | length == 0)
 
     - name: Prerequisite check complete
       ansible.builtin.debug:
@@ -262,15 +263,19 @@
         - "git config --global user.name 'Ansible Automation Platform'"
         - "git config --global user.email 'aap-redis-automation@example.com'"
       changed_when: false
-      when: github_token | length > 0
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
-    - name: Create git credentials file
+    - name: Create git credentials file for Bitbucket
       ansible.builtin.copy:
         content: |
-          https://{{ github_token }}:x-oauth-basic@github.com
+          https://{{ bitbucket_username }}:{{ bitbucket_api_token }}@bitbucket.org
         dest: "{{ ansible_env.HOME }}/.git-credentials"
         mode: '0600'
-      when: github_token | length > 0
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
       no_log: true
 
     - name: Clone git repository
@@ -371,40 +376,49 @@
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
 
-    - name: Extract GitHub repository owner and name from URL
+    - name: Extract Bitbucket workspace and repository from URL
       ansible.builtin.set_fact:
-        github_repo_owner: "{{ git_repo_url | regex_replace('^https://github\\.com/([^/]+)/.*$', '\\1') | regex_replace('^git@github\\.com:([^/]+)/.*$', '\\1') }}"
-        github_repo_name: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
+        bitbucket_workspace: "{{ git_repo_url | regex_replace('^https://[^@]*@?bitbucket\\.org/([^/]+)/.*$', '\\1') | regex_replace('^git@bitbucket\\.org:([^/]+)/.*$', '\\1') }}"
+        bitbucket_repo_slug: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
       when: 
         - create_pull_request == 'yes'
-        - github_token | length > 0
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
-    - name: Debug - Show extracted GitHub info
+    - name: Debug - Show extracted Bitbucket info
       ansible.builtin.debug:
         msg:
-          - "GitHub Repo URL: {{ git_repo_url }}"
-          - "Extracted Owner: {{ github_repo_owner }}"
-          - "Extracted Repo Name: {{ github_repo_name }}"
-          - "API URL: https://api.github.com/repos/{{ github_repo_owner }}/{{ github_repo_name }}/pulls"
-          - "Branch: {{ git_branch_name }}"
-          - "Base: {{ git_default_branch }}"
+          - "Bitbucket Repo URL: {{ git_repo_url }}"
+          - "Extracted Workspace: {{ bitbucket_workspace }}"
+          - "Extracted Repo Slug: {{ bitbucket_repo_slug }}"
+          - "API URL: https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
+          - "Source Branch: {{ git_branch_name }}"
+          - "Destination Branch: {{ git_default_branch }}"
       when: 
         - create_pull_request == 'yes'
-        - github_token | length > 0
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
-    - name: Create Pull Request using GitHub API
+    - name: Create Pull Request using Bitbucket API
       ansible.builtin.uri:
-        url: "https://api.github.com/repos/{{ github_repo_owner }}/{{ github_repo_name }}/pulls"
+        url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
         method: POST
+        user: "{{ bitbucket_username }}"
+        password: "{{ bitbucket_api_token }}"
+        force_basic_auth: yes
         headers:
-          Authorization: "token {{ github_token }}"
-          Accept: "application/vnd.github.v3+json"
+          Content-Type: "application/json"
         body_format: json
         body:
           title: "{{ pr_title }}"
-          body: "{{ pr_body }}"
-          head: "{{ git_branch_name }}"
-          base: "{{ git_default_branch }}"
+          description: "{{ pr_body }}"
+          source:
+            branch:
+              name: "{{ git_branch_name }}"
+          destination:
+            branch:
+              name: "{{ git_default_branch }}"
+          close_source_branch: false
         status_code: 201
         return_content: yes
       register: pr_create
@@ -412,7 +426,8 @@
       no_log: false  # Temporarily disabled for debugging
       when: 
         - create_pull_request == 'yes'
-        - github_token | length > 0
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
     - name: Debug - Show API error if PR creation failed
       ansible.builtin.debug:
@@ -429,8 +444,8 @@
       ansible.builtin.debug:
         msg: 
           - "✓ Pull Request created successfully!"
-          - "PR #{{ pr_create.json.number }}: {{ pr_create.json.title }}"
-          - "URL: {{ pr_create.json.html_url }}"
+          - "PR #{{ pr_create.json.id }}: {{ pr_create.json.title }}"
+          - "URL: {{ pr_create.json.links.html.href }}"
           - "Status: {{ pr_create.json.state }}"
       when: 
         - create_pull_request == 'yes'
@@ -442,13 +457,13 @@
       ansible.builtin.debug:
         msg:
           - "⚠ Pull Request not created automatically"
-          - "Reason: {{ 'PR creation disabled' if create_pull_request == 'no' else 'GitHub token not provided or invalid' }}"
+          - "Reason: {{ 'PR creation disabled' if create_pull_request == 'no' else 'Bitbucket credentials not provided or invalid' }}"
           - ""
           - "Please create the PR manually:"
           - "  Repository: {{ git_repo_url }}"
           - "  Branch: {{ git_branch_name }}"
           - "  Title: {{ pr_title }}"
-          - "  URL: https://github.com/{{ github_repo_owner | default('OWNER') }}/{{ github_repo_name | default('REPO') }}/compare/{{ git_default_branch }}...{{ git_branch_name }}?expand=1"
+          - "  URL: https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/{{ bitbucket_repo_slug | default('REPO') }}/pull-requests/new?source={{ git_branch_name }}&dest={{ git_default_branch }}"
           - ""
           - "✓ Configuration file generated and pushed successfully"
       when: 
@@ -464,7 +479,9 @@
       ansible.builtin.file:
         path: "{{ ansible_env.HOME }}/.git-credentials"
         state: absent
-      when: github_token | length > 0
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
       no_log: true
 
     - name: Reset git credential helper
@@ -472,7 +489,9 @@
         cmd: git config --global --unset credential.helper
       changed_when: false
       failed_when: false
-      when: github_token | length > 0
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
 
     - name: Final Summary
       ansible.builtin.debug:
