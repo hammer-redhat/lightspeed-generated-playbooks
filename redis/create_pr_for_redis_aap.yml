@@ -1,4 +1,31 @@
 ---
+# ============================================================================
+# Redis Cluster Configuration Generator with Bitbucket Integration
+# ============================================================================
+# 
+# BITBUCKET AUTHENTICATION REQUIREMENTS:
+# ======================================
+# This playbook requires a Workspace Access Token or Personal Access Token
+# (NOT a Repository Access Token - those don't work for git operations)
+#
+# How to create the correct token:
+#   1. Go to Bitbucket Workspace Settings → Access Tokens (or Personal Settings)
+#   2. Click "Create Access Token"
+#   3. Name: "AAP Redis Automation"
+#   4. Required Scopes:
+#      ☑️  Workspace: Read
+#      ☑️  Projects: Write
+#      ☑️  Repositories: Write
+#      ☑️  Pull requests: Write
+#   5. Copy the generated token
+#
+# Required AAP Survey Variables:
+#   - bitbucket_username: Your Bitbucket username
+#   - bitbucket_api_token: The Workspace/Personal Access Token (see above)
+#   - git_repo_url: Your Bitbucket repository URL
+#
+# ============================================================================
+
 - name: Generate Redis Cluster Configuration and Create Pull Request (AAP Version)
   hosts: localhost
   gather_facts: yes
@@ -368,11 +395,43 @@
     - name: Fail if API authentication failed
       ansible.builtin.fail:
         msg: |
-          Bitbucket API authentication failed. Please verify:
-          1. Your Bitbucket username is correct
-          2. Your API token is valid and not expired
-          3. The token has 'repository:write' and 'pullrequest:write' scopes
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  Bitbucket API Authentication Failed (401 Unauthorized)        ║
+          ╚════════════════════════════════════════════════════════════════╝
           
+          The API token authentication failed. This usually means:
+          
+          ⚠️  WRONG TOKEN TYPE - Repository Access Tokens don't work for git operations!
+          
+          You need to create a WORKSPACE ACCESS TOKEN or PERSONAL ACCESS TOKEN:
+          
+          ┌─────────────────────────────────────────────────────────────┐
+          │ How to Create the Correct Token:                            │
+          ├─────────────────────────────────────────────────────────────┤
+          │                                                              │
+          │ OPTION 1: Workspace Access Token (Recommended)              │
+          │ ──────────────────────────────────────────────────────────  │
+          │ 1. Go to Workspace Settings → Access Tokens                 │
+          │ 2. Click "Create Access Token"                              │
+          │ 3. Name: "AAP Redis Automation"                             │
+          │ 4. Scopes:                                                   │
+          │    ☑️  Workspace: Read                                       │
+          │    ☑️  Projects: Write                                       │
+          │    ☑️  Repositories: Write                                   │
+          │    ☑️  Pull requests: Write                                  │
+          │ 5. Copy the token                                            │
+          │                                                              │
+          │ OPTION 2: Personal Access Token                              │
+          │ ──────────────────────────────────────────────────────────  │
+          │ 1. Go to Personal Settings → Access Tokens                  │
+          │ 2. Click "Create Access Token"                              │
+          │ 3. Same scopes as above                                      │
+          │                                                              │
+          └─────────────────────────────────────────────────────────────┘
+          
+          ❌ DON'T USE: Repository Access Tokens (they're scoped too narrowly)
+          
+          Current username: {{ bitbucket_username }}
           Error: {{ bitbucket_auth_test.msg | default('Unknown error') }}
       when:
         - bitbucket_auth_test is defined
@@ -416,19 +475,30 @@
     - name: Fail if repository access check failed
       ansible.builtin.fail:
         msg: |
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  Repository Access Failed                                       ║
+          ╚════════════════════════════════════════════════════════════════╝
+          
           Cannot access repository: {{ check_workspace }}/{{ check_repo_slug }}
           
           Possible issues:
-          1. Repository does not exist
-          2. Your API token doesn't have access to this repository
-          3. The workspace name or repository slug is incorrect
-          4. The token needs 'repository:write' scope
+          ─────────────────────────────────────────────────────────────────
+          1. ❌ Repository does not exist in this workspace
+          2. ❌ Your token doesn't have access to this repository  
+          3. ❌ The workspace/repository name is incorrect
+          4. ❌ Token missing required scopes
           
-          Please verify:
-          - Repository URL: {{ git_repo_url }}
-          - Workspace: {{ check_workspace }}
-          - Repository: {{ check_repo_slug }}
-          - Username: {{ bitbucket_username }}
+          Verification Details:
+          ─────────────────────────────────────────────────────────────────
+          • Repository URL: {{ git_repo_url }}
+          • Workspace: {{ check_workspace }}
+          • Repository: {{ check_repo_slug }}
+          • Username: {{ bitbucket_username }}
+          
+          Required Token Scopes:
+          ─────────────────────────────────────────────────────────────────
+          ☑️  Repositories: Write
+          ☑️  Pull requests: Write
           
           Error: {{ repo_access_test.msg | default('Unknown error') }}
       when:
