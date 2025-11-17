@@ -255,6 +255,20 @@
         path: "{{ git_repo_local_path }}"
         state: absent
 
+    - name: Extract Bitbucket host from repository URL
+      ansible.builtin.set_fact:
+        bitbucket_host: "{{ git_repo_url | regex_replace('^https://[^@]*@?([^/]+)/.*$', '\\1') | regex_replace('^git@([^:]+):.*$', '\\1') }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
+    - name: Display extracted Bitbucket host
+      ansible.builtin.debug:
+        msg: "Using Bitbucket host: {{ bitbucket_host }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
     - name: Configure git credential helper for HTTPS authentication
       ansible.builtin.command:
         cmd: "{{ item }}"
@@ -270,7 +284,7 @@
     - name: Create git credentials file for Bitbucket
       ansible.builtin.copy:
         content: |
-          https://{{ bitbucket_username }}:{{ bitbucket_api_token }}@bitbucket.org
+          https://{{ bitbucket_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}
         dest: "{{ ansible_env.HOME }}/.git-credentials"
         mode: '0600'
       when: 
@@ -287,6 +301,24 @@
       register: git_clone
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
+
+    - name: Normalize git remote URL to use credentials (remove any embedded username)
+      ansible.builtin.command:
+        cmd: "git remote set-url origin https://{{ bitbucket_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}/{{ git_repo_url | regex_replace('^https://[^@]*@?[^/]+/(.*)$', '\\1') | regex_replace('^git@[^:]+:(.*)$', '\\1') }}"
+        chdir: "{{ git_repo_local_path }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+      no_log: true
+      changed_when: false
+
+    - name: Verify git remote URL
+      ansible.builtin.command:
+        cmd: git remote get-url origin
+        chdir: "{{ git_repo_local_path }}"
+      register: git_remote_url
+      changed_when: false
+      no_log: true
 
     - name: Create deployments directory if it doesn't exist
       ansible.builtin.file:
@@ -375,10 +407,11 @@
       register: git_push
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
+        GIT_ASKPASS: "echo"  # Prevent password prompts
 
     - name: Extract Bitbucket workspace and repository from URL
       ansible.builtin.set_fact:
-        bitbucket_workspace: "{{ git_repo_url | regex_replace('^https://[^@]*@?bitbucket\\.org/([^/]+)/.*$', '\\1') | regex_replace('^git@bitbucket\\.org:([^/]+)/.*$', '\\1') }}"
+        bitbucket_workspace: "{{ git_repo_url | regex_replace('^https://[^@]*@?[^/]+/([^/]+)/.*$', '\\1') | regex_replace('^git@[^:]+:([^/]+)/.*$', '\\1') }}"
         bitbucket_repo_slug: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
       when: 
         - create_pull_request == 'yes'
