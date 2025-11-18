@@ -19,6 +19,7 @@
 #   • Create at: Workspace Settings → Access Tokens
 #   • Required Scopes: Repositories: Write
 #   • The playbook will generate a PR creation URL for you
+#   • Note: Uses "x-token-auth" as git username (handled automatically)
 #
 # OPTIONAL: Use App Password for automatic PR creation
 # ──────────────────────────────────────────────────────────────────────
@@ -317,10 +318,28 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
+    - name: Determine git username based on token type
+      ansible.builtin.set_fact:
+        git_auth_username: "{{ 'x-token-auth' if (is_workspace_token | default(false)) else bitbucket_username }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
+    - name: Display git authentication method
+      ansible.builtin.debug:
+        msg:
+          - "Git Authentication Setup:"
+          - "  Token Type: {{ 'Workspace Access Token' if (is_workspace_token | default(false)) else 'App Password or Other' }}"
+          - "  Git Username: {{ git_auth_username }}"
+          - "  {{ 'Using x-token-auth for Workspace Access Token' if (is_workspace_token | default(false)) else 'Using your Bitbucket username' }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
     - name: Create git credentials file for Bitbucket
       ansible.builtin.copy:
         content: |
-          https://{{ bitbucket_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}
+          https://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}
         dest: "{{ ansible_env.HOME }}/.git-credentials"
         mode: '0600'
       when: 
@@ -355,9 +374,9 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Normalize git remote URL to use credentials (remove any embedded username)
+    - name: Normalize git remote URL to use credentials (with correct username for token type)
       ansible.builtin.command:
-        cmd: "git remote set-url origin https://{{ bitbucket_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}/{{ repo_path }}"
+        cmd: "git remote set-url origin https://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}/{{ repo_path }}"
         chdir: "{{ git_repo_local_path }}"
       when: 
         - bitbucket_username | default('') | length > 0
@@ -375,7 +394,10 @@
 
     - name: Display masked remote URL
       ansible.builtin.debug:
-        msg: "Git remote URL set to: {{ git_remote_url.stdout | regex_replace('(https://)([^:]+):([^@]+)(@.+)', '\\1\\2:***TOKEN***\\4') }}"
+        msg: 
+          - "Git remote URL configured:"
+          - "  {{ git_remote_url.stdout | regex_replace('(https://)([^:]+):([^@]+)(@.+)', '\\1\\2:***TOKEN***\\4') }}"
+          - "  Username for git: {{ git_auth_username }}"
       when: git_remote_url is defined
 
     - name: Check token format
