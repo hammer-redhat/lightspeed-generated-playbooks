@@ -386,7 +386,8 @@
       ansible.builtin.debug:
         msg:
           - "Token prefix detected: {{ token_prefix }}***"
-          - "{{ 'WARNING: This looks like a Repository Access Token (ATATT prefix) - these do NOT work!' if token_prefix.startswith('ATATT') else 'Token format looks valid' }}"
+          - "Token length: {{ bitbucket_api_token | length }} characters"
+          - "{{ 'WARNING: This looks like a Repository Access Token (ATATT prefix) - these do NOT work!' if token_prefix.startswith('ATATT') else 'Token format appears to be Workspace/HTTP Access Token (ATCTT)' }}"
           - "{{ 'You need a Workspace or Personal Access Token instead!' if token_prefix.startswith('ATATT') else '' }}"
       when: 
         - token_prefix is defined
@@ -436,6 +437,8 @@
         msg: 
           - "Bitbucket API authentication: {{ 'SUCCESS ✓' if bitbucket_auth_test is succeeded else 'FAILED ✗' }}"
           - "Authentication method: {{ bitbucket_auth_method | upper if bitbucket_auth_method is defined else 'N/A' }}"
+          - "{{ 'Bearer token test failed with: ' + (bitbucket_auth_test_bearer.msg | default('Unknown error')) if bitbucket_auth_test_bearer is defined and bitbucket_auth_test_bearer is failed else '' }}"
+          - "{{ 'Basic Auth test failed with: ' + (bitbucket_auth_test_basic.msg | default('Unknown error')) if bitbucket_auth_test_basic is defined and bitbucket_auth_test_basic is failed else '' }}"
       when: 
         - bitbucket_auth_test is defined
         - bitbucket_username | default('') | length > 0
@@ -449,19 +452,41 @@
           ╚════════════════════════════════════════════════════════════════╝
           
           ❌ BOTH authentication methods failed!
-          {{ '   Token starts with: ' + token_prefix + '*** (Repository Access Token)' if token_prefix is defined and token_prefix.startswith('ATATT') else '' }}
+          Token prefix: {{ token_prefix }}***
+          Token type detected: {{ 'Repository Access Token (WRONG)' if token_prefix is defined and token_prefix.startswith('ATATT') else 'Workspace/HTTP Access Token (ATCTT)' }}
           
-          Error from Bitbucket API:
-          "{{ bitbucket_auth_test.json.error.message if bitbucket_auth_test.json is defined and bitbucket_auth_test.json.error is defined else 'Token is invalid, expired, or not supported for this endpoint' }}"
+          Bearer Token Error: {{ bitbucket_auth_test_bearer.msg | default('N/A') }}
+          Basic Auth Error: {{ bitbucket_auth_test_basic.msg | default('N/A') }}
           
-          ⚠️  WRONG TOKEN TYPE CONFIRMED!
+          ⚠️  TROUBLESHOOTING STEPS:
           
-          Repository Access Tokens (ATATT...) do NOT work for:
-            ✗ API endpoint /2.0/user
-            ✗ Git push operations  
-            ✗ Pull request creation
+          {{ 'ISSUE: Wrong token type - Repository Access Tokens (ATATT) do NOT work!' if token_prefix is defined and token_prefix.startswith('ATATT') else 'ISSUE: Token may be invalid, expired, or missing required scopes' }}
           
+          {% if token_prefix is defined and token_prefix.startswith('ATCTT') %}
+          Your token appears to be a Workspace/HTTP Access Token (correct type).
+          However, authentication is still failing. Please verify:
+          
+          1️⃣  Token Scopes - Ensure your token has ALL of these:
+             ☑️  Workspace: Read  
+             ☑️  Projects: Write (or Read)
+             ☑️  Repositories: Write
+             ☑️  Pull requests: Write
+          
+          2️⃣  Token Expiration - Check if your token has expired
+             • Go to Workspace Settings → Access Tokens
+             • Check the expiration date of your token
+          
+          3️⃣  Token Validity - Verify the token is active
+             • Try copying the token again (no extra spaces/characters)
+             • Make sure you copied the ENTIRE token
+          
+          4️⃣  Workspace Access - Ensure you have access to the workspace
+             • Verify you're a member of the workspace
+             • Check workspace permissions
+          
+          {% else %}
           You MUST create a WORKSPACE ACCESS TOKEN or PERSONAL ACCESS TOKEN:
+          {% endif %}
           
           ┌─────────────────────────────────────────────────────────────┐
           │ How to Create the Correct Token:                            │
