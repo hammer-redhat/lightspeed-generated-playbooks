@@ -5,29 +5,32 @@
 # 
 # BITBUCKET AUTHENTICATION REQUIREMENTS:
 # ======================================
-# This playbook requires a Workspace Access Token or Personal Access Token
-# (NOT a Repository Access Token - those don't work for git operations)
+# This playbook requires a Bitbucket APP PASSWORD for API operations
+# (NOT Workspace Access Tokens - those don't support API endpoints!)
 #
-# The playbook will automatically test both Bearer token and Basic Auth
-# methods and use whichever works with your token.
+# IMPORTANT: Workspace Access Tokens (ATCTT...) do NOT work with Bitbucket 
+# API endpoints like /2.0/user or /pullrequests. You MUST use an App Password!
 #
-# How to create the correct token:
-#   1. Go to Bitbucket Workspace Settings → Access Tokens (or Personal Settings)
-#   2. Click "Create Access Token"
-#   3. Name: "AAP Redis Automation"
-#   4. Required Scopes:
-#      ☑️  Workspace: Read
-#      ☑️  Projects: Write
+# How to create a Bitbucket App Password:
+# ─────────────────────────────────────────────────────────────────────
+#   1. Log into Bitbucket Cloud
+#   2. Click your profile icon → Personal Settings
+#   3. Navigate to: App passwords (under Access management)
+#   4. Click "Create app password"
+#   5. Label: "AAP Redis Automation"
+#   6. Required Permissions:
+#      ☑️  Account: Read
 #      ☑️  Repositories: Write
 #      ☑️  Pull requests: Write
-#   5. Copy the generated token
+#      ☑️  Projects: Write (if applicable)
+#   7. Click "Create"
+#   8. Copy the generated password immediately (you won't see it again!)
 #
-# IMPORTANT: Workspace Access Tokens (ATCTT...) use "x-token-auth" as the 
-# username with Basic Auth, not your Bitbucket username!
+# App Password Format: Typically looks like "ATBBxxxxxxxxxxxxxx" (shorter than tokens)
 #
 # Required AAP Survey Variables:
-#   - bitbucket_username: Your Bitbucket username (for git operations)
-#   - bitbucket_api_token: The Workspace/Personal Access Token (see above)
+#   - bitbucket_username: Your Bitbucket username
+#   - bitbucket_api_token: The App Password (see above)
 #   - git_repo_url: Your Bitbucket repository URL
 #
 # ============================================================================
@@ -387,8 +390,10 @@
         msg:
           - "Token prefix detected: {{ token_prefix }}***"
           - "Token length: {{ bitbucket_api_token | length }} characters"
-          - "{{ 'WARNING: This looks like a Repository Access Token (ATATT prefix) - these do NOT work!' if token_prefix.startswith('ATATT') else 'Token format appears to be Workspace/HTTP Access Token (ATCTT)' }}"
-          - "{{ 'You need a Workspace or Personal Access Token instead!' if token_prefix.startswith('ATATT') else '' }}"
+          - "{{ 'WARNING: Repository Access Token (ATATT) - does NOT work with API!' if token_prefix.startswith('ATATT') else '' }}"
+          - "{{ 'WARNING: Workspace Access Token (ATCTT) - does NOT work with /2.0/user API endpoint!' if token_prefix.startswith('ATCTT') else '' }}"
+          - "{{ 'Token appears to be an App Password (correct for API access)' if token_prefix.startswith('ATBB') else '' }}"
+          - "{{ 'For Bitbucket API, you need an App Password, not a Workspace Access Token!' if token_prefix.startswith('ATCTT') else '' }}"
       when: 
         - token_prefix is defined
         - bitbucket_username | default('') | length > 0
@@ -408,11 +413,11 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Test Bitbucket API authentication with Basic Auth (if Bearer failed)
+    - name: Test Bitbucket API authentication with Basic Auth (App Password)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/user"
         method: GET
-        user: "x-token-auth"
+        user: "{{ bitbucket_username }}"
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         status_code: 200
@@ -453,39 +458,53 @@
           
           ❌ BOTH authentication methods failed!
           Token prefix: {{ token_prefix }}***
-          Token type detected: {{ 'Repository Access Token (WRONG)' if token_prefix is defined and token_prefix.startswith('ATATT') else 'Workspace/HTTP Access Token (ATCTT)' }}
+          Token type detected: {{ 'Repository Access Token (WRONG)' if token_prefix is defined and token_prefix.startswith('ATATT') else 'Workspace Access Token (WRONG FOR API)' if token_prefix is defined and token_prefix.startswith('ATCTT') else 'App Password (ATBB) or Unknown' }}
           
           Bearer Token Error: {{ bitbucket_auth_test_bearer.msg | default('N/A') }}
           Basic Auth Error: {{ bitbucket_auth_test_basic.msg | default('N/A') }}
           
-          ⚠️  TROUBLESHOOTING STEPS:
-          
-          {{ 'ISSUE: Wrong token type - Repository Access Tokens (ATATT) do NOT work!' if token_prefix is defined and token_prefix.startswith('ATATT') else 'ISSUE: Token may be invalid, expired, or missing required scopes' }}
+          ⚠️  ISSUE IDENTIFIED:
           
           {% if token_prefix is defined and token_prefix.startswith('ATCTT') %}
-          Your token appears to be a Workspace/HTTP Access Token (correct type).
-          However, authentication is still failing. Please verify:
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  WRONG TOKEN TYPE: Workspace Access Token (ATCTT)              ║
+          ╚════════════════════════════════════════════════════════════════╝
           
-          1️⃣  Token Scopes - Ensure your token has ALL of these:
-             ☑️  Workspace: Read  
-             ☑️  Projects: Write (or Read)
+          Your token (ATCTT...) is a WORKSPACE ACCESS TOKEN. These tokens:
+            ✓ Work for: HTTP Git operations (clone, push, pull)
+            ✗ DO NOT work for: Bitbucket REST API endpoints
+          
+          The Bitbucket API requires an APP PASSWORD instead!
+          
+          🔧 SOLUTION: Create an App Password
+          ─────────────────────────────────────────────────────────────────
+          1. Log into Bitbucket Cloud
+          2. Click your profile icon → Personal Settings  
+          3. Go to: App passwords (under Access management)
+          4. Click "Create app password"
+          5. Label: "AAP Redis Automation"
+          6. Required Permissions:
+             ☑️  Account: Read
              ☑️  Repositories: Write
              ☑️  Pull requests: Write
+             ☑️  Projects: Write
+          7. Click "Create"
+          8. Copy the password (typically starts with "ATBB...")
+          9. Update your AAP survey with the new App Password
           
-          2️⃣  Token Expiration - Check if your token has expired
-             • Go to Workspace Settings → Access Tokens
-             • Check the expiration date of your token
+          {% elif token_prefix is defined and token_prefix.startswith('ATATT') %}
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  WRONG TOKEN TYPE: Repository Access Token (ATATT)             ║
+          ╚════════════════════════════════════════════════════════════════╝
           
-          3️⃣  Token Validity - Verify the token is active
-             • Try copying the token again (no extra spaces/characters)
-             • Make sure you copied the ENTIRE token
-          
-          4️⃣  Workspace Access - Ensure you have access to the workspace
-             • Verify you're a member of the workspace
-             • Check workspace permissions
+          Repository Access Tokens do NOT work for API operations!
+          You MUST create an APP PASSWORD instead (see instructions above).
           
           {% else %}
-          You MUST create a WORKSPACE ACCESS TOKEN or PERSONAL ACCESS TOKEN:
+          Please verify your token is an App Password with required permissions:
+             ☑️  Account: Read
+             ☑️  Repositories: Write
+             ☑️  Pull requests: Write
           {% endif %}
           
           ┌─────────────────────────────────────────────────────────────┐
@@ -564,7 +583,7 @@
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ check_workspace }}/{{ check_repo_slug }}"
         method: GET
-        user: "x-token-auth"
+        user: "{{ bitbucket_username }}"
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         status_code: 200
@@ -766,7 +785,7 @@
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
         method: POST
-        user: "x-token-auth"
+        user: "{{ bitbucket_username }}"
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         headers:
