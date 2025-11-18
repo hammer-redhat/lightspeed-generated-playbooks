@@ -5,33 +5,33 @@
 # 
 # BITBUCKET AUTHENTICATION REQUIREMENTS:
 # ======================================
-# This playbook requires a Bitbucket APP PASSWORD for API operations
-# (NOT Workspace Access Tokens - those don't support API endpoints!)
+# This playbook uses a SIMPLIFIED APPROACH that works with Workspace Access Tokens!
 #
-# IMPORTANT: Workspace Access Tokens (ATCTT...) do NOT work with Bitbucket 
-# API endpoints like /2.0/user or /pullrequests. You MUST use an App Password!
+# What happens:
+#   1. ✅ Push branch using your Workspace Access Token (always works)
+#   2. ✅ Generate a direct URL to create the PR in your browser (1-click)
+#   3. ⚠️  Optional: Try API-based PR creation (if you have App Password)
 #
-# How to create a Bitbucket App Password:
-# ─────────────────────────────────────────────────────────────────────
-#   1. Log into Bitbucket Cloud
-#   2. Click your profile icon → Personal Settings
-#   3. Navigate to: App passwords (under Access management)
-#   4. Click "Create app password"
-#   5. Label: "AAP Redis Automation"
-#   6. Required Permissions:
-#      ☑️  Account: Read
-#      ☑️  Repositories: Write
-#      ☑️  Pull requests: Write
-#      ☑️  Projects: Write (if applicable)
-#   7. Click "Create"
-#   8. Copy the generated password immediately (you won't see it again!)
+# RECOMMENDED: Use Workspace Access Token (ATCTT...)
+# ──────────────────────────────────────────────────────────────────────
+# This is the EASIEST approach and works perfectly for git operations!
+#   • Works for: git clone, push, pull (which is what we need!)
+#   • Create at: Workspace Settings → Access Tokens
+#   • Required Scopes: Repositories: Write
+#   • The playbook will generate a PR creation URL for you
 #
-# App Password Format: Typically looks like "ATBBxxxxxxxxxxxxxx" (shorter than tokens)
+# OPTIONAL: Use App Password for automatic PR creation
+# ──────────────────────────────────────────────────────────────────────
+# Only needed if you want automatic API-based PR creation (not required!)
+#   1. Personal Settings → App passwords
+#   2. Required Permissions: Account:Read, Repositories:Write, Pull requests:Write
+#   3. Format: Typically "ATBB..." (shorter than workspace tokens)
 #
 # Required AAP Survey Variables:
 #   - bitbucket_username: Your Bitbucket username
-#   - bitbucket_api_token: The App Password (see above)
+#   - bitbucket_api_token: Workspace Access Token OR App Password
 #   - git_repo_url: Your Bitbucket repository URL
+#   - create_pull_request: 'yes' or 'no' (API PR creation - optional)
 #
 # ============================================================================
 
@@ -449,8 +449,8 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Fail if API authentication failed
-      ansible.builtin.fail:
+    - name: Display API authentication failure details (non-fatal)
+      ansible.builtin.debug:
         msg: |
           ╔════════════════════════════════════════════════════════════════╗
           ║  Bitbucket API Authentication Failed (401 Unauthorized)        ║
@@ -550,11 +550,26 @@
           
           Current username: {{ bitbucket_username }}
           {{ 'Current token: ' + token_prefix + '*** (INVALID - Repository Access Token)' if token_prefix is defined and token_prefix.startswith('ATATT') else 'Token type: Unknown' }}
+          
+          ══════════════════════════════════════════════════════════════
+          NOTE: This playbook will continue execution!
+          ══════════════════════════════════════════════════════════════
+          • Branch will be pushed successfully (uses your workspace token)
+          • You'll get a direct URL to create the PR manually
+          • No API authentication needed for git operations
+          ══════════════════════════════════════════════════════════════
       when:
         - bitbucket_auth_test is defined
         - bitbucket_auth_test is failed
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+
+    - name: Skip API-based PR creation due to auth failure
+      ansible.builtin.set_fact:
+        skip_api_pr_creation: true
+      when:
+        - bitbucket_auth_test is defined
+        - bitbucket_auth_test is failed
 
     - name: Extract workspace and repo for repository check
       ansible.builtin.set_fact:
@@ -774,12 +789,13 @@
         return_content: yes
       register: pr_create
       ignore_errors: yes
-      no_log: false  # Temporarily disabled for debugging
+      no_log: false
       when: 
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
         - bitbucket_auth_method == 'bearer'
+        - skip_api_pr_creation is not defined or not skip_api_pr_creation
 
     - name: Create Pull Request using Bitbucket API (Basic auth)
       ansible.builtin.uri:
@@ -805,12 +821,13 @@
         return_content: yes
       register: pr_create
       ignore_errors: yes
-      no_log: false  # Temporarily disabled for debugging
+      no_log: false
       when: 
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
         - bitbucket_auth_method == 'basic'
+        - skip_api_pr_creation is not defined or not skip_api_pr_creation
 
     - name: Debug - Show API error if PR creation failed
       ansible.builtin.debug:
@@ -836,21 +853,35 @@
         - pr_create is not skipped
         - pr_create is succeeded
 
-    - name: Display manual PR creation instructions
+    - name: Generate PR creation URL
+      ansible.builtin.set_fact:
+        pr_creation_url: "https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/{{ bitbucket_repo_slug | default('REPO') }}/pull-requests/new?source={{ git_branch_name }}&dest={{ git_default_branch }}"
+      when: 
+        - bitbucket_workspace is defined
+        - bitbucket_repo_slug is defined
+
+    - name: Display PR creation instructions
       ansible.builtin.debug:
         msg:
-          - "⚠ Pull Request not created automatically"
-          - "Reason: {{ 'PR creation disabled' if create_pull_request == 'no' else 'Bitbucket credentials not provided or invalid' }}"
           - ""
-          - "Please create the PR manually:"
-          - "  Repository: {{ git_repo_url }}"
-          - "  Branch: {{ git_branch_name }}"
-          - "  Title: {{ pr_title }}"
-          - "  URL: https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/{{ bitbucket_repo_slug | default('REPO') }}/pull-requests/new?source={{ git_branch_name }}&dest={{ git_default_branch }}"
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Pull Request Ready to Create                                 ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
           - ""
-          - "✓ Configuration file generated and pushed successfully"
+          - "✓ Branch pushed successfully: {{ git_branch_name }}"
+          - "✓ Configuration file ready: {{ output_filename }}"
+          - ""
+          - "{{ '✓ Pull Request created via API!' if (pr_create is defined and pr_create is succeeded) else '📋 Create Pull Request (click link below):' }}"
+          - "{{ pr_create.json.links.html.href if (pr_create is defined and pr_create is succeeded) else pr_creation_url }}"
+          - ""
+          - "{{ 'PR Details:' if (pr_create is defined and pr_create is succeeded) else 'PR will be pre-filled with:' }}"
+          - "  • Title: {{ pr_title }}"
+          - "  • Source: {{ git_branch_name }}"
+          - "  • Destination: {{ git_default_branch }}"
+          - "  • Repository: {{ bitbucket_workspace | default('') }}/{{ bitbucket_repo_slug | default('') }}"
+          - ""
       when: 
-        - pr_create is skipped or (pr_create is defined and pr_create is failed)
+        - git_branch_name is defined
 
     - name: Cleanup temporary repository
       ansible.builtin.file:
