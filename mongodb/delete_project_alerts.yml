@@ -1,0 +1,33 @@
+---
+- name: Delete project alerts
+  hosts: opsmanager_host  # Replace with your Ops Manager host
+  gather_facts: no
+  vars:
+    proj_name: "your_project_name"  # Replace with the actual project name
+    om_api_user: "JLYUSMNZ:b9120cf5-xxxx-xxxx-xxxx-xxxxxxxxxxx"  # Replace with actual API user
+    om_url: "https://prod-opsmanager.prod.pncint.net:8443"  # Replace with actual Ops Manager URL
+  tasks:
+    - name: Delete project alerts
+      uri:
+        url: "https://{{ om_url }}/api/public/v1.0/groups/{{ proj_name }}/alertConfigs?pretty=true&itemsPerPage=500"
+        method: "GET"
+        user: "{{ om_api_user }}"
+        validate_certs: no
+        body_format: json
+        body:
+          items:
+            - name: alert_name_1  # Replace with actual alert names
+            - name: alert_name_2
+        status_code: 200
+      register: alert_configs_response
+
+    - name: Delete each alert
+      uri:
+        url: "https://{{ om_url }}/api/public/v1.0/groups/{{ proj_name }}/alertConfigs/{{ item }}"
+        method: "DELETE"
+        user: "{{ om_api_user }}"
+        validate_certs: no
+        status_code: 204
+      loop: "{{ alert_configs_response.json.items | map(attribute='name') | list }}"
+      when: alert_configs_response.status == 200
+```

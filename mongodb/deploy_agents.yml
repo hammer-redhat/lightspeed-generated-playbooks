@@ -1,0 +1,69 @@
+---
+- name: Configure Deployment Hosts for Ops Manager Automation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    project_name: "{{ project_name }}"
+    prod_omurl: "https://prod-opsmanager.prod.pncint.net:8443"
+    prod_omenv: "PROD"
+    qa_omurl: "https://opsmanager-qa.pncint.net"
+    qa_omenv: "QA"
+  tasks:
+    - name: Get Project ID and API Key
+      ansible.builtin.slurp:
+        src: "/home/mongo/deploy/logs/create_project.{{ project_name }}.log"
+      register: log_content
+      when: "'3' in hostname | int"
+      tags: [get_project_id_and_api_key]
+
+    - name: Get Project ID and API Key (QA)
+      ansible.builtin.slurp:
+        src: "/home/mongo/deploy/logs/create_project.{{ project_name }}.log"
+      register: log_content
+      when: "'2' in hostname | int"
+      tags: [get_project_id_and_api_key]
+
+    - name: Create Local Config
+      ansible.builtin.template:
+        src: "local.config.template"
+        dest: "/home/mongo/deploy/work/local.config"
+      notify:
+        - Configure Agent on Hosts
+
+    - name: Configure Agent on Hosts
+      ansible.builtin.copy:
+        src: "/home/mongo/deploy/bin/configure_agent.sh"
+        dest: "/tmp/configure_agent.sh"
+        mode: '0600'
+      ansible.builtin.template:
+        src: ".ldaprc"
+        dest: "/tmp/.ldaprc"
+        mode: '0600'
+      ansible.builtin.copy:
+        src: "/home/mongo/deploy/.ssl/rootCA.pem"
+        dest: "/tmp/rootCA.pem"
+        mode: '0600'
+      ansible.builtin.copy:
+        src: "/home/mongo/deploy/.ssl/{{ item }}"
+        dest: "/tmp/{{ item }}"
+        mode: '0600'
+      loop:
+        - "{{ hostname }}.pem"
+        - "pnc_bank_root_ca_ldap.crt"
+      ansible.builtin.copy:
+        src: "/home/mongo/deploy/work/mongodb-mms-automation-agent.service"
+        dest: "/tmp/mongodb-mms-automation-agent.service"
+        mode: '0600'
+      ansible.builtin.command: "tar -cPf - /tmp/*.{configure_agent.sh,*.ldaprc,*.pem,mongodb-mms-automation-agent.service,local.config} | ssh -o strictHostKeyChecking=no {{ item }} 'rm -rf /tmp/.{{ inventory_hostname }}_deploy; mkdir /tmp/.{{ inventory_hostname }}_deploy; cd /tmp/.{{ inventory_hostname }}_deploy; tar --strip-components 4 -xPf -; chmod 700 /tmp/.{{ inventory_hostname }}_deploy/*; chmod 700 /tmp/.{{ inventory_hostname }}_deploy/*; setfacl -m mongo:r-x /tmp/.{{ inventory_hostname }}_deploy; setfacl -m mongo:r-x /tmp/.{{ inventory_hostname }}_deploy/*; /tmp/.{{ inventory_hostname }}_deploy/configure_agent.sh -e {{ omenv }}'"
+      loop: "{{ deployment_hosts }}"
+      when: deployment_hosts is defined
+      notify:
+        - Handle Deployment Errors
+
+    - name: Handle Deployment Errors
+      ansible.builtin.debug:
+        msg: "Deployment to {{ item }} failed with return code {{ item.rc }}"
+      loop: "{{ hosts_with_errors }}"
+      when: hosts_with_errors is defined
+
+...

@@ -1,0 +1,62 @@
+---
+- name: Create Ops Manager Alerts for Project
+  hosts: localhost
+  gather_facts: false
+  vars:
+    project_name: "{{ project_name }}"
+    prod_omapiuser: "JLYUSMNZ:b9120cf5-xxxx-xxxx-xxxx-xxxxxxxxxxx"
+    prod_omurl: "https://prod-opsmanager.prod.pncint.net:8443"
+    qa_omapiuser: "JYZHXGIC:9f8231f8-xxxx-xxxx-xxxx-xxxxxxxxxxx"
+    qa_omurl: "https://opsmanager-qa.example.com"
+  tasks:
+    - name: Get Project ID
+      ansible.builtin.uri:
+        url: "https://{{ omurl }}/api/public/v1.0/groups/byName/{{ project_name }}"
+        method: GET
+        user: "{{ omapiuser }}"
+        validate_certs: no
+        return_content: yes
+      register: project_id_response
+      when: "'3' in hostname | int"
+      tags: [get_project_id]
+
+    - name: Get Project ID (QA)
+      ansible.builtin.uri:
+        url: "https://{{ qa_omurl }}/api/public/v1.0/groups/byName/{{ project_name }}"
+        method: GET
+        user: "{{ qa_omapiuser }}"
+        validate_certs: no
+        return_content: yes
+      register: project_id_response
+      when: "'2' in hostname | int"
+      tags: [get_project_id]
+
+    - name: Confirm Alert Deletion
+      ansible.builtin.pause:
+        prompt: "Continue (y/n)?"
+      register: confirm
+      when: project_id is defined
+
+    - name: Delete Existing Alerts
+      command: /home/mongo/deploy/bin/delete_project_alerts.sh -p "{{ project_name }}"
+      when: confirm.user_input == 'Y'
+
+    - name: Create Alerts from Templates
+      ansible.builtin.uri:
+        url: "https://{{ omurl }}/api/public/v1.0/groups/{{ project_id }}/alertConfigs"
+        method: POST
+        headers:
+          Accept: "application/json"
+          Content-Type: "application/json"
+        body_format: raw
+        body: "{{ lookup('file', 'alert_{{ item }}.json') }}"
+        validate_certs: no
+        return_content: yes
+      loop: "{{ alert_files | default([]) }}"
+      register: alert_creation_response
+      when: confirm.user_input == 'Y'
+      tags: [create_alerts]
+
+    - name: Display Completion Message
+      ansible.builtin.debug:
+        msg: "Utility execution complete. Log file: /home/mongo/deploy/logs/create_project_alerts_{{ project_name }}_{{ lookup('pipe', 'date +%m%d%H%M') }}.log"

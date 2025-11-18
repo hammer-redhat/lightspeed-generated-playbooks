@@ -1,0 +1,51 @@
+---
+- name: Deploy MongoDB Ops Manager Project
+  hosts: localhost
+  gather_facts: false
+  vars:
+    project_name: "{{ project_name }}"
+  tasks:
+    - name: Create Project
+      ansible.builtin.command: /home/mongo/deploy/bin/create_project.sh -p "{{ project_name }}"
+      register: create_project_output
+      changed_when: create_project_output.stdout_lines[-1] == "Project created successfully"
+      fail_msg: "Failed to create project {{ project_name }}. See logs at /home/mongo/deploy/logs/create_project.{{ project_name }}.log"
+
+    - name: Deploy Agents
+      ansible.builtin.pause:
+        prompt: "Are you ready to deploy agents to the hosts (y/n)?"
+      register: deploy_agents_reply
+      when: create_project_output.rc == 0
+
+    - name: Deploy Agents (if confirmed)
+      ansible.builtin.command: /home/mongo/deploy/bin/deploy_agents.sh -p "{{ project_name }}"
+      register: deploy_agents_output
+      failed_when: deploy_agents_output.rc != 0
+      when: deploy_agents_reply.user_input == 'Y'
+
+    - name: Deploy Instances
+      ansible.builtin.pause:
+        prompt: "Are you ready to deploy instances to the hosts (y/n)?"
+      register: deploy_instances_reply
+      when: deploy_agents_output.rc == 0
+
+    - name: Deploy Instances (if confirmed)
+      ansible.builtin.command: /home/mongo/deploy/bin/deploy_build.sh -p "{{ project_name }}"
+      register: deploy_instances_output
+      failed_when: deploy_instances_output.rc != 0
+      when: deploy_instances_reply.user_input == 'Y'
+
+    - name: Send ACD to Ops Manager
+      ansible.builtin.command: /home/mongo/deploy/bin/deploy_acd.sh -p "{{ project_name }}"
+      register: send_acd_output
+      failed_when: send_acd_output.rc != 0
+      when: deploy_instances_output.rc == 0
+
+    - name: Create Project Alerts
+      ansible.builtin.command: /home/mongo/deploy/bin/create_project_alerts.sh -p "{{ project_name }}"
+      register: create_alerts_output
+      failed_when: create_alerts_output.rc != 0
+      when: send_acd_output.rc == 0
+
+...
+```

@@ -1,0 +1,80 @@
+---
+- name: Generate MongoDB ACD JSON
+  hosts: localhost
+  gather_facts: false
+  vars:
+    proj_name: "{{ project_name }}"
+    conf_file: "/home/mongo/deploy/conf/{{ proj_name }}.conf"
+    log_file: "/home/mongo/deploy/logs/deploy_build.{{ proj_name }}.log"
+    acd_new_file: "/home/mongo/deploy/work/{{ proj_name }}.acd.new.json"
+    templates_dir: "/home/mongo/deploy/templates"
+    args26_templates:
+      - "args2_6_s.template"
+      - "args2_6_s_qa.template"
+      - "args2_6_d.template"
+      - "args2_6_d_qa.template"
+    replica_set_template: "replicaSets.member.template"
+  tasks:
+    - name: Ensure log file is removed
+      file:
+        path: "{{ log_file }}"
+        state: absent
+
+    - name: Ensure temporary files are removed
+      file:
+        path:
+          - "/home/mongo/deploy/work/{{ proj_name }}.args2_6.all.temp"
+          - "/home/mongo/deploy/work/{{ proj_name }}.replicaSets.members.all.temp"
+        state: absent
+
+    - name: Read configuration file
+      slurp:
+        src: "{{ conf_file }}"
+      register: conf_content
+
+    - name: Process configuration file
+      set_fact:
+        hosts: "{{ conf_content.content | regex_search('HOST: (.*)') | map('extract', '1') | list }}"
+
+    - name: Generate args2_6 template
+      copy:
+        dest: "/home/mongo/deploy/work/{{ proj_name }}.args2_6.temp"
+        content: "{{ lookup('template', templates_dir + '/' + (hosts[0].om_env_ind == '2' ? args26_templates[3] : args26_templates[1]) ) }}"
+      loop: "{{ hosts }}"
+      loop_control:
+        loop_var: host
+
+    - name: Generate replica set member template
+      copy:
+        dest: "/home/mongo/deploy/work/{{ proj_name }}.replicaSets.members.all.temp"
+        content: "{{ lookup('template', replica_set_template) }}"
+      when: host.member_type != 'S'
+
+    - name: Customize args2_6 template
+      template:
+        src: "/home/mongo/deploy/work/{{ proj_name }}.args2_6.temp"
+        dest: "/home/mongo/deploy/work/{{ proj_name }}.args2_6.all.temp"
+        loop: "{{ hosts }}"
+      loop_control:
+        loop_var: host
+
+    - name: Customize replica set member template
+      template:
+        src: "/home/mongo/deploy/work/{{ proj_name }}.replicaSets.members.all.temp"
+        dest: "/home/mongo/deploy/work/{{ proj_name }}.replicaSets.members.all.temp"
+      when: host.member_type != 'S'
+
+    - name: Combine templates into ACD JSON
+      template:
+        src: "/home/mongo/deploy/work/acd_template.j2"
+        dest: "{{ acd_new_file }}"
+      notify:
+        - Log ACD generation success
+
+    - name: Log ACD generation success
+      debug:
+        msg: "ACD build complete for {{ proj_name }}. File {{ acd_new_file }}"
+      when: acd_new_file is changed
+
+... (handlers for logging)
+```
