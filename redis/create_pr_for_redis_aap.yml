@@ -22,8 +22,11 @@
 #      ☑️  Pull requests: Write
 #   5. Copy the generated token
 #
+# IMPORTANT: Workspace Access Tokens (ATCTT...) use "x-token-auth" as the 
+# username with Basic Auth, not your Bitbucket username!
+#
 # Required AAP Survey Variables:
-#   - bitbucket_username: Your Bitbucket username
+#   - bitbucket_username: Your Bitbucket username (for git operations)
 #   - bitbucket_api_token: The Workspace/Personal Access Token (see above)
 #   - git_repo_url: Your Bitbucket repository URL
 #
@@ -408,7 +411,7 @@
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/user"
         method: GET
-        user: "{{ bitbucket_username }}"
+        user: "x-token-auth"
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         status_code: 200
@@ -536,7 +539,7 @@
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ check_workspace }}/{{ check_repo_slug }}"
         method: GET
-        user: "{{ bitbucket_username }}"
+        user: "x-token-auth"
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         status_code: 200
@@ -738,7 +741,7 @@
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
         method: POST
-        user: "{{ bitbucket_username }}"
+        user: "x-token-auth"
         password: "{{ bitbucket_api_token }}"
         force_basic_auth: yes
         headers:
