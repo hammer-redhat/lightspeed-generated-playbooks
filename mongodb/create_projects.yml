@@ -1,0 +1,89 @@
+---
+- name: Create and configure project in Ops Manager
+  hosts: localhost
+  gather_facts: false
+  vars:
+    proj_name: "{{ project_name }}"
+    om_env: "{{ om_env }}"
+    om_api_user: "{{ om_api_user }}"
+    om_url: "{{ om_url }}"
+    om_org: "{{ om_org }}"
+    acd_template: "{{ acd_template }}"
+  tasks:
+    - name: Set project name
+      set_fact:
+        proj_id: "{{ proj_name | replace(' ', '_') }}"
+
+    - name: Create project
+      uri:
+        url: "{{ om_url }}/api/public/v1.0/groups"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ proj_name }}"
+          orgId: "{{ om_org }}"
+        user: "{{ om_api_user }}"
+        validate_certs: no
+        status_code: 201
+        body: "{{ proj_name }}, {{ om_org }}"
+      register: create_project_response
+      failed_when: create_project_response.status != 201
+      changed_when: create_project_response.status == 201
+
+    - name: Get project ID
+      set_fact:
+        project_id: "{{ (create_project_response.json | from_json).id }}"
+
+    - name: Update ACD
+      copy:
+        src: "/home/mongo/deploy/templates/{{ acd_template }}"
+        dest: "/home/mongo/deploy/work/{{ acd_template | replace(' ', '_') }}.temp"
+      when: acd_template == "autoconfiguration.json"
+      notify:
+        - Update ACD in Ops Manager
+
+    - name: Update server type
+      uri:
+        url: "{{ om_url }}/api/public/v1.0/usage/groups/{{ project_id }}/defaultServerType"
+        method: PUT
+        body_format: json
+        body:
+          serverType:
+            name: "{{ server_type }}"
+            label: "{{ server_type }}"
+        user: "{{ om_api_user }}"
+        validate_certs: no
+        status_code: 200
+      notify:
+        - Retrieve updated ACD
+
+    - name: Include tasks for notify handlers
+      meta: flush_handlers
+
+  handlers:
+    - name: Update ACD in Ops Manager
+      uri:
+        url: "{{ om_url }}/api/public/v1.0/groups/{{ project_id }}/automationConfig"
+        method: PUT
+        body_format: json
+        body: "@/home/mongo/deploy/work/{{ acd_template | replace(' ', '_') }}.temp"
+        user: "{{ om_api_user }}"
+        validate_certs: no
+        status_code: 200
+      register: acd_update_response
+      failed_when: acd_update_response.status != 200
+      changed_when: acd_update_response.status == 200
+
+    - name: Retrieve updated ACD
+      uri:
+        url: "{{ om_url }}/api/public/v1.0/groups/{{ project_id }}/automationConfig"
+        method: GET
+        body_format: json
+        output: "/home/mongo/deploy/work/{{ proj_id }}.acd.json"
+        user: "{{ om_api_user }}"
+        validate_certs: no
+        status_code: 200
+      register: acd_retrieve_response
+      failed_when: acd_retrieve_response.status != 200
+      changed_when: acd_retrieve_response.status == 200
+```

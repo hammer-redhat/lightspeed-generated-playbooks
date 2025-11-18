@@ -1,0 +1,116 @@
+---
+- name: Configure deployment hosts for Ops Manager Automation
+  hosts: all
+  become: yes
+  vars:
+    project_name: "{{ proj_name }}"
+    om_host_type: "{{ om_host_type }}"
+    om_url: "{{ om_url }}"
+    omenv: "{{ omenv }}"
+    log_file: "/home/mongo/deploy/logs/deploy_agents.{{ project_name }}.log"
+    deploy_remote_log_file: "/home/mongo/deploy/logs/deploy_remote.{{ project_name }}.log"
+    config_file: "/home/mongo/deploy/conf/{{ project_name }}.conf"
+    create_project_log: "/home/mongo/deploy/logs/create_project.{{ project_name }}.log"
+
+  tasks:
+    - name: Ensure log files have correct permissions
+      file:
+        path: "{{ item }}"
+        mode: '0600'
+      loop:
+        - "{{ log_file }}"
+        - "{{ deploy_remote_log_file }}"
+        - "{{ create_project_log }}"
+
+    - name: Create local configuration file
+      block:
+        - name: Extract agentApiKey and project_id from logs
+          shell: "grep agentApiKey {{ create_project_log }} | awk '{print $3}' | tr -d '\"' | tr -d ','"
+          register: agentApiKey
+          changed_when: false
+          failed_when: false
+
+        - name: Extract project_id from logs
+          shell: "grep 'id' {{ create_project_log }} | awk '{print $3}' | tr -d '\"' | tr -d ','"
+          register: project_id
+          changed_when: false
+          failed_when: false
+
+        - name: Create local.config
+          copy:
+            content: |
+              PROJECT_ID={{ project_id.stdout }}
+              AGENT_API_KEY={{ agentApiKey.stdout }}
+              OMURL={{ om_url }}
+            dest: /home/mongo/deploy/work/local.config
+            mode: '0600'
+
+        - name: Copy local.config to project-specific file
+          copy:
+            src: /home/mongo/deploy/work/local.config
+            dest: /home/mongo/deploy/work/{{ project_name }}.local.config
+            mode: '0600'
+
+    - name: Deploy to remote hosts
+      block:
+        - name: Ensure remote deployment directory exists
+          file:
+            path: "/tmp/.{{ ansible_hostname }}_deploy"
+            state: directory
+            mode: '0700'
+
+        - name: Prepare files for deployment
+          copy:
+            src:
+              - "/home/mongo/deploy/bin/configure_agent.sh"
+              - "/home/mongo/deploy/templates/.ldaprc"
+              - "/home/mongo/deploy/.ssl/rootCA.pem"
+              - "/home/mongo/deploy/.ssl/{{ ansible_hostname|truncate(3) }}.pem"
+              - "/home/mongo/deploy/.ssl/{{ kmip_cert }}.pem"
+              - "/home/mongo/deploy/.ssl/pnc_bank_root_ca_ldap.crt"
+              - "/home/mongo/deploy/work/mongodb-mms-automation-agent.service"
+              - "/home/mongo/deploy/work/local.config"
+            dest: "/tmp/.{{ ansible_hostname }}_deploy/"
+            remote_src: yes
+
+        - name: Extract KMIP client certificate name and set DEPLOY_ENV
+          set_fact:
+            kmip_cert: "MGO-MongoDB-{{ ansible_hostname|truncate(3) }}-{{ omenv }}"
+            deploy_env: "{{ 'QA' if ansible_hostname|substr(4, 1) == '2' else 'PROD' }}"
+
+        - name: Ensure KMIP client certificate exists
+          stat:
+            path: "/home/mongo/deploy/.ssl/{{ kmip_cert }}.pem"
+          register: kmip_cert_file
+
+        - name: Warn if KMIP client certificate is missing
+          debug:
+            msg: "KMIP client certificate {{ kmip_cert }}.pem not available in /home/mongo/deploy/.ssl"
+          when: not kmip_cert_file.stat.exists
+
+        - name: Ensure SSL certificate exists
+          stat:
+            path: "/home/mongo/deploy/.ssl/{{ ansible_hostname|truncate(3) }}.pem"
+          register: ssl_cert_file
+
+        - name: Warn if SSL certificate is missing
+          debug:
+            msg: "TLS certificate {{ ansible_hostname|truncate(3)}.pem not available in /home/mongo/deploy/.ssl"
+          when: not ssl_cert_file.stat.exists
+
+        - name: Execute configure_agent.sh on remote host
+          command: "/tmp/.{{ ansible_hostname }}_deploy/configure_agent.sh -e {{ omenv }}"
+          delegate_to: "{{ ansible_hostname }}"
+          become: yes
+          register: deploy_result
+          failed_when: deploy_result.rc != 0
+
+        - name: Handle deployment result
+          debug:
+            var: deploy_result.stdout_lines
+          when: deploy_result.rc != 0
+
+    - name: Display deployment log
+      command: cat "{{ deploy_remote_log_file }}"
+      delegate_to: localhost
+```
