@@ -905,18 +905,19 @@
         - pr_create is defined
         - pr_create is failed
 
-    - name: Display PR creation result
+    - name: Display PR creation result (API success)
       ansible.builtin.debug:
         msg: 
-          - "✓ Pull Request created successfully!"
-          - "PR #{{ pr_create.json.id }}: {{ pr_create.json.title }}"
-          - "URL: {{ pr_create.json.links.html.href }}"
-          - "Status: {{ pr_create.json.state }}"
+          - "✓ Pull Request created successfully via API!"
+          - "{{ 'PR #' + (pr_create.json.id | string) + ': ' + pr_create.json.title if pr_create.json is defined and pr_create.json.id is defined else 'PR created but details not available' }}"
+          - "{{ 'URL: ' + pr_create.json.links.html.href if pr_create.json is defined and pr_create.json.links is defined else '' }}"
+          - "{{ 'Status: ' + pr_create.json.state if pr_create.json is defined and pr_create.json.state is defined else '' }}"
       when: 
         - create_pull_request == 'yes'
         - pr_create is defined
         - pr_create is not skipped
         - pr_create is succeeded
+        - pr_create.json is defined
 
     - name: Generate PR creation URL
       ansible.builtin.set_fact:
@@ -931,27 +932,27 @@
         msg:
           - ""
           - "╔════════════════════════════════════════════════════════════════╗"
-          - "║  Pull Request Ready to Create                                 ║"
+          - "║  Branch Pushed Successfully!                                   ║"
           - "╚════════════════════════════════════════════════════════════════╝"
           - ""
           - "✓ Branch pushed successfully: {{ git_branch_name }}"
           - "✓ Configuration file ready: {{ output_filename }}"
           - ""
-          - "{{ '✓ Pull Request created via API!' if (pr_create is defined and pr_create is succeeded) else '📋 Create Pull Request (click link below):' }}"
-          - "{{ pr_create.json.links.html.href if (pr_create is defined and pr_create is succeeded) else pr_creation_url }}"
+          - "📋 Create Pull Request:"
+          - "   {{ pr_creation_url if pr_creation_url is defined else 'URL generation skipped' }}"
           - ""
-          - "{{ 'PR Details:' if (pr_create is defined and pr_create is succeeded) else 'PR will be pre-filled with:' }}"
+          - "PR Details:"
           - "  • Title: {{ pr_title }}"
           - "  • Source: {{ git_branch_name }}"
           - "  • Destination: {{ git_default_branch }}"
           - "  • Repository: {{ bitbucket_workspace | default('') }}/{{ bitbucket_repo_slug | default('') }}"
           - ""
           - "📊 View all workspace PRs:"
-          - "   {{ workspace_pr_dashboard }}"
+          - "   {{ workspace_pr_dashboard if workspace_pr_dashboard is defined else 'https://bitbucket.org/' + (bitbucket_workspace | default('WORKSPACE')) + '/workspace/pull-requests/' }}"
           - ""
           - "ℹ️  Once created, your PR will appear in both:"
           - "   • Repository PRs: https://bitbucket.org/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pull-requests/"
-          - "   • Workspace PRs: {{ workspace_pr_dashboard }}"
+          - "   • Workspace PRs: https://bitbucket.org/{{ bitbucket_workspace }}/workspace/pull-requests/"
           - ""
       when: 
         - git_branch_name is defined
@@ -991,7 +992,7 @@
           - "✓ Environment: {{ environment | upper }}"
           - "✓ File: {{ output_filename }}"
           - "✓ Branch: {{ git_branch_name }}"
-          - "{{ '✓ Pull Request created' if (create_pull_request == 'yes' and pr_create is succeeded) else '⚠ Pull Request needs manual creation' }}"
+          - "{{ '✓ Pull Request created via API' if (create_pull_request == 'yes' and pr_create is defined and pr_create is succeeded) else '✓ Branch pushed - create PR manually' }}"
           - ""
           - "📊 View All Workspace Pull Requests:"
           - "   https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/workspace/pull-requests/"
