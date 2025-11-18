@@ -306,6 +306,32 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
+    - name: Check token format (BEFORE git setup)
+      ansible.builtin.set_fact:
+        token_prefix: "{{ bitbucket_api_token[:5] if bitbucket_api_token | length >= 5 else 'unknown' }}"
+      when: 
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
+    - name: Detect token type and set API capabilities (BEFORE git setup)
+      ansible.builtin.set_fact:
+        is_workspace_token: "{{ token_prefix.startswith('ATCTT') if token_prefix is defined else false }}"
+        is_repo_token: "{{ token_prefix.startswith('ATATT') if token_prefix is defined else false }}"
+        is_app_password: "{{ token_prefix.startswith('ATBB') if token_prefix is defined else false }}"
+      when: 
+        - token_prefix is defined
+
+    - name: Display token type detection
+      ansible.builtin.debug:
+        msg:
+          - "Token Analysis:"
+          - "  Prefix: {{ token_prefix }}***"
+          - "  Workspace Token: {{ is_workspace_token | default(false) }}"
+          - "  Repo Token: {{ is_repo_token | default(false) }}"
+          - "  App Password: {{ is_app_password | default(false) }}"
+      when: 
+        - token_prefix is defined
+
     - name: Configure git credential helper for HTTPS authentication
       ansible.builtin.command:
         cmd: "{{ item }}"
@@ -320,18 +346,28 @@
 
     - name: Determine git username based on token type
       ansible.builtin.set_fact:
-        git_auth_username: "{{ 'x-token-auth' if (is_workspace_token | default(false)) else bitbucket_username }}"
+        git_auth_username: "{{ 'x-token-auth' if (is_workspace_token | default(false) or is_repo_token | default(false)) else bitbucket_username }}"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+      
+    - name: Force x-token-auth if git_auth_username is not set (safety fallback)
+      ansible.builtin.set_fact:
+        git_auth_username: "x-token-auth"
+      when:
+        - git_auth_username is not defined or git_auth_username | length == 0
+        - bitbucket_api_token is defined
 
     - name: Display git authentication method
       ansible.builtin.debug:
         msg:
+          - "════════════════════════════════════════════════════════════════"
           - "Git Authentication Setup:"
-          - "  Token Type: {{ 'Workspace Access Token' if (is_workspace_token | default(false)) else 'App Password or Other' }}"
+          - "  Token Type: {{ 'Workspace Access Token (ATCTT)' if (is_workspace_token | default(false)) else 'Repository Access Token (ATATT)' if (is_repo_token | default(false)) else 'App Password (ATBB)' if (is_app_password | default(false)) else 'Unknown' }}"
           - "  Git Username: {{ git_auth_username }}"
-          - "  {{ 'Using x-token-auth for Workspace Access Token' if (is_workspace_token | default(false)) else 'Using your Bitbucket username' }}"
+          - "  Host: {{ bitbucket_host }}"
+          - "  {{ '✅ Using x-token-auth (correct for Workspace/Repo tokens)' if git_auth_username == 'x-token-auth' else '✅ Using Bitbucket username (correct for App Passwords)' }}"
+          - "════════════════════════════════════════════════════════════════"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
@@ -399,21 +435,6 @@
           - "  {{ git_remote_url.stdout | regex_replace('(https://)([^:]+):([^@]+)(@.+)', '\\1\\2:***TOKEN***\\4') }}"
           - "  Username for git: {{ git_auth_username }}"
       when: git_remote_url is defined
-
-    - name: Check token format
-      ansible.builtin.set_fact:
-        token_prefix: "{{ bitbucket_api_token[:5] if bitbucket_api_token | length >= 5 else 'unknown' }}"
-      when: 
-        - bitbucket_username | default('') | length > 0
-        - bitbucket_api_token | default('') | length > 0
-
-    - name: Detect token type and set API capabilities
-      ansible.builtin.set_fact:
-        is_workspace_token: "{{ token_prefix.startswith('ATCTT') if token_prefix is defined else false }}"
-        is_repo_token: "{{ token_prefix.startswith('ATATT') if token_prefix is defined else false }}"
-        is_app_password: "{{ token_prefix.startswith('ATBB') if token_prefix is defined else false }}"
-      when: 
-        - token_prefix is defined
 
     - name: Display token type hint
       ansible.builtin.debug:
