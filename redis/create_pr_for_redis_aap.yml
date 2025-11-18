@@ -878,6 +878,7 @@
     - name: Generate PR creation URL
       ansible.builtin.set_fact:
         pr_creation_url: "https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/{{ bitbucket_repo_slug | default('REPO') }}/pull-requests/new?source={{ git_branch_name }}&dest={{ git_default_branch }}"
+        workspace_pr_dashboard: "https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/workspace/pull-requests/"
       when: 
         - bitbucket_workspace is defined
         - bitbucket_repo_slug is defined
@@ -901,6 +902,13 @@
           - "  • Source: {{ git_branch_name }}"
           - "  • Destination: {{ git_default_branch }}"
           - "  • Repository: {{ bitbucket_workspace | default('') }}/{{ bitbucket_repo_slug | default('') }}"
+          - ""
+          - "📊 View all workspace PRs:"
+          - "   {{ workspace_pr_dashboard }}"
+          - ""
+          - "ℹ️  Once created, your PR will appear in both:"
+          - "   • Repository PRs: https://bitbucket.org/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pull-requests/"
+          - "   • Workspace PRs: {{ workspace_pr_dashboard }}"
           - ""
       when: 
         - git_branch_name is defined
@@ -941,6 +949,9 @@
           - "✓ File: {{ output_filename }}"
           - "✓ Branch: {{ git_branch_name }}"
           - "{{ '✓ Pull Request created' if (create_pull_request == 'yes' and pr_create is succeeded) else '⚠ Pull Request needs manual creation' }}"
+          - ""
+          - "📊 View All Workspace Pull Requests:"
+          - "   https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/workspace/pull-requests/"
           - ""
           - "Next steps:"
           - "  1. Review the Pull Request"
