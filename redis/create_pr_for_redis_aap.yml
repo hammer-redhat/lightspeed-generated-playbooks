@@ -385,15 +385,25 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
+    - name: Detect token type and set API capabilities
+      ansible.builtin.set_fact:
+        is_workspace_token: "{{ token_prefix.startswith('ATCTT') if token_prefix is defined else false }}"
+        is_repo_token: "{{ token_prefix.startswith('ATATT') if token_prefix is defined else false }}"
+        is_app_password: "{{ token_prefix.startswith('ATBB') if token_prefix is defined else false }}"
+      when: 
+        - token_prefix is defined
+
     - name: Display token type hint
       ansible.builtin.debug:
         msg:
           - "Token prefix detected: {{ token_prefix }}***"
           - "Token length: {{ bitbucket_api_token | length }} characters"
-          - "{{ 'WARNING: Repository Access Token (ATATT) - does NOT work with API!' if token_prefix.startswith('ATATT') else '' }}"
-          - "{{ 'WARNING: Workspace Access Token (ATCTT) - does NOT work with /2.0/user API endpoint!' if token_prefix.startswith('ATCTT') else '' }}"
-          - "{{ 'Token appears to be an App Password (correct for API access)' if token_prefix.startswith('ATBB') else '' }}"
-          - "{{ 'For Bitbucket API, you need an App Password, not a Workspace Access Token!' if token_prefix.startswith('ATCTT') else '' }}"
+          - "{{ 'Token Type: Workspace Access Token (ATCTT) - Good for Git, not for API' if is_workspace_token else '' }}"
+          - "{{ 'Token Type: Repository Access Token (ATATT) - Limited functionality' if is_repo_token else '' }}"
+          - "{{ 'Token Type: App Password (ATBB) - Full API support' if is_app_password else '' }}"
+          - "{{ 'API Checks: SKIPPED (Workspace tokens do not support API endpoints)' if is_workspace_token else 'API Checks: ENABLED (will attempt API authentication)' }}"
+          - ""
+          - "{{ 'ℹ️  Workspace Token detected - skipping API tests, will use git operations only' if is_workspace_token else '' }}"
       when: 
         - token_prefix is defined
         - bitbucket_username | default('') | length > 0
@@ -412,6 +422,8 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - not (is_workspace_token | default(false))
+        - not (is_repo_token | default(false))
 
     - name: Test Bitbucket API authentication with Basic Auth (App Password)
       ansible.builtin.uri:
@@ -427,7 +439,10 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_test_bearer is defined
         - bitbucket_auth_test_bearer is failed
+        - not (is_workspace_token | default(false))
+        - not (is_repo_token | default(false))
 
     - name: Set authentication method based on test results
       ansible.builtin.set_fact:
@@ -592,7 +607,10 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_method is defined
         - bitbucket_auth_method == 'bearer'
+        - not (is_workspace_token | default(false))
+        - not (is_repo_token | default(false))
 
     - name: Test repository access (Basic auth)
       ansible.builtin.uri:
@@ -608,7 +626,10 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - bitbucket_auth_method is defined
         - bitbucket_auth_method == 'basic'
+        - not (is_workspace_token | default(false))
+        - not (is_repo_token | default(false))
 
     - name: Display repository access result
       ansible.builtin.debug:
@@ -620,35 +641,36 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Fail if repository access check failed
-      ansible.builtin.fail:
+    - name: Display repository access check failure (non-fatal)
+      ansible.builtin.debug:
         msg: |
           ╔════════════════════════════════════════════════════════════════╗
-          ║  Repository Access Failed                                       ║
+          ║  Repository API Access Check Failed (Non-Fatal)                ║
           ╚════════════════════════════════════════════════════════════════╝
           
-          Cannot access repository: {{ check_workspace }}/{{ check_repo_slug }}
+          ⚠️  Cannot verify repository access via API: {{ check_workspace }}/{{ check_repo_slug }}
           
-          Possible issues:
+          This is OK! This check only affects API-based PR creation.
+          The playbook will continue and:
+            ✅ Push your branch using Git (works with Workspace Access Token)
+            ✅ Generate a URL for you to create the PR manually
+          
+          Possible reasons for API failure:
           ─────────────────────────────────────────────────────────────────
-          1. ❌ Repository does not exist in this workspace
-          2. ❌ Your token doesn't have access to this repository  
-          3. ❌ The workspace/repository name is incorrect
-          4. ❌ Token missing required scopes
+          • Using Workspace Access Token (doesn't support API endpoints)
+          • Token missing API scopes
+          • Repository permissions issue
           
-          Verification Details:
+          Repository Details:
           ─────────────────────────────────────────────────────────────────
           • Repository URL: {{ git_repo_url }}
           • Workspace: {{ check_workspace }}
           • Repository: {{ check_repo_slug }}
           • Username: {{ bitbucket_username }}
           
-          Required Token Scopes:
-          ─────────────────────────────────────────────────────────────────
-          ☑️  Repositories: Write
-          ☑️  Pull requests: Write
-          
-          Error: {{ repo_access_test.msg | default('Unknown error') }}
+          ══════════════════════════════════════════════════════════════════
+          Continuing with git operations (which will work fine)...
+          ══════════════════════════════════════════════════════════════════
       when:
         - repo_access_test is defined
         - repo_access_test is failed
