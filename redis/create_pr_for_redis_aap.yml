@@ -3,15 +3,15 @@
 # Redis Cluster Configuration Generator with Bitbucket Integration
 # ============================================================================
 # 
-# BITBUCKET AUTHENTICATION REQUIREMENTS:
-# ======================================
-# This playbook uses a SIMPLIFIED APPROACH that works with Workspace Access Tokens!
+# SUPPORTS BOTH BITBUCKET CLOUD AND BITBUCKET SERVER/DATA CENTER
+# ================================================================
+# This playbook automatically detects your Bitbucket environment and adapts:
+#   • Bitbucket Cloud (bitbucket.org)
+#   • Bitbucket Server / Data Center (self-hosted)
 #
-# What happens:
-#   1. ✅ Push branch using your Workspace Access Token (always works)
-#   2. ✅ Generate a direct URL to create the PR in your browser (1-click)
-#   3. ⚠️  Optional: Try API-based PR creation (if you have App Password)
-#
+# BITBUCKET CLOUD AUTHENTICATION:
+# ================================
+# 
 # RECOMMENDED: Use Workspace Access Token (ATCTT...)
 # ──────────────────────────────────────────────────────────────────────
 # This is the EASIEST approach and works perfectly for git operations!
@@ -28,10 +28,22 @@
 #   2. Required Permissions: Account:Read, Repositories:Write, Pull requests:Write
 #   3. Format: Typically "ATBB..." (shorter than workspace tokens)
 #
+# BITBUCKET SERVER/DATA CENTER AUTHENTICATION:
+# =============================================
+# 
+# Use Personal Access Token or HTTP Access Token
+# ──────────────────────────────────────────────────────────────────────
+#   • Create at: User Settings → Personal Access Tokens
+#   • OR: Repository Settings → HTTP Access Tokens
+#   • Required Permissions: Repository Read, Repository Write, Pull Request Read/Write
+#   • Uses Basic Authentication (username + token)
+#   • Example URL: http://bitbucket.example.com:7990/scm/PROJECT/repo.git
+#
 # Required AAP Survey Variables:
+# ===============================
 #   - bitbucket_username: Your Bitbucket username
-#   - bitbucket_api_token: Workspace Access Token OR App Password
-#   - git_repo_url: Your Bitbucket repository URL
+#   - bitbucket_api_token: Workspace Access Token, App Password, or Personal Access Token
+#   - git_repo_url: Your Bitbucket repository URL (Cloud or Server format)
 #   - create_pull_request: 'yes' or 'no' (API PR creation - optional)
 #
 # ============================================================================
@@ -292,45 +304,68 @@
         path: "{{ git_repo_local_path }}"
         state: absent
 
-    - name: Extract Bitbucket host from repository URL
+    # ============================================================================
+    # GIT AUTHENTICATION SETUP (Supports both Bitbucket Cloud and Server)
+    # ============================================================================
+    
+    - name: Extract Bitbucket host and port from repository URL
       ansible.builtin.set_fact:
-        bitbucket_host: "{{ git_repo_url | regex_replace('^https://[^@]*@?([^/]+)/.*$', '\\1') | regex_replace('^git@([^:]+):.*$', '\\1') }}"
-      when: 
-        - bitbucket_username | default('') | length > 0
-        - bitbucket_api_token | default('') | length > 0
+        bitbucket_host_with_port: "{{ git_repo_url | regex_replace('^https?://[^@]*@?([^/]+)/.*$', '\\1') | regex_replace('^git@([^:]+):.*$', '\\1') }}"
+        bitbucket_host: "{{ git_repo_url | regex_replace('^https?://[^@]*@?([^/:]+).*$', '\\1') | regex_replace('^git@([^:]+):.*$', '\\1') }}"
+      
+    - name: Detect Bitbucket type (Cloud vs Server/Data Center)
+      ansible.builtin.set_fact:
+        is_bitbucket_cloud: "{{ 'bitbucket.org' in bitbucket_host }}"
+        is_bitbucket_server: "{{ 'bitbucket.org' not in bitbucket_host }}"
 
-    - name: Display extracted Bitbucket host
+    - name: Display Bitbucket environment detection
       ansible.builtin.debug:
-        msg: "Using Bitbucket host: {{ bitbucket_host }}"
-      when: 
-        - bitbucket_username | default('') | length > 0
-        - bitbucket_api_token | default('') | length > 0
+        msg:
+          - "════════════════════════════════════════════════════════════════"
+          - "Bitbucket Environment Detection:"
+          - "  Git Repository URL: {{ git_repo_url }}"
+          - "  Host: {{ bitbucket_host }}"
+          - "  Host with Port: {{ bitbucket_host_with_port }}"
+          - "  Type: {{ 'Bitbucket Cloud' if is_bitbucket_cloud else 'Bitbucket Server/Data Center' }}"
+          - "════════════════════════════════════════════════════════════════"
 
     - name: Check token format (BEFORE git setup)
       ansible.builtin.set_fact:
-        token_prefix: "{{ bitbucket_api_token[:5] if bitbucket_api_token | length >= 5 else 'unknown' }}"
+        token_prefix: "{{ bitbucket_api_token[:5] if (bitbucket_api_token | default('') | length >= 5) else 'unknown' }}"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Detect token type and set API capabilities (BEFORE git setup)
+    - name: Detect token type for Bitbucket Cloud
       ansible.builtin.set_fact:
         is_workspace_token: "{{ token_prefix.startswith('ATCTT') if token_prefix is defined else false }}"
         is_repo_token: "{{ token_prefix.startswith('ATATT') if token_prefix is defined else false }}"
         is_app_password: "{{ token_prefix.startswith('ATBB') if token_prefix is defined else false }}"
       when: 
         - token_prefix is defined
+        - is_bitbucket_cloud
 
-    - name: Display token type detection
+    - name: Display token type detection (Cloud only)
       ansible.builtin.debug:
         msg:
-          - "Token Analysis:"
+          - "Token Analysis (Bitbucket Cloud):"
           - "  Prefix: {{ token_prefix }}***"
           - "  Workspace Token: {{ is_workspace_token | default(false) }}"
           - "  Repo Token: {{ is_repo_token | default(false) }}"
           - "  App Password: {{ is_app_password | default(false) }}"
       when: 
         - token_prefix is defined
+        - is_bitbucket_cloud
+
+    - name: Display token info (Server/Data Center)
+      ansible.builtin.debug:
+        msg:
+          - "Token Analysis (Bitbucket Server/Data Center):"
+          - "  Using Personal Access Token or HTTP Access Token"
+          - "  Token prefix: {{ token_prefix }}***"
+      when:
+        - token_prefix is defined
+        - is_bitbucket_server
 
     - name: Configure git credential helper for HTTPS authentication
       ansible.builtin.command:
@@ -344,38 +379,42 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Determine git username based on token type
+    - name: Determine git username (Bitbucket Cloud - token-based)
       ansible.builtin.set_fact:
         git_auth_username: "{{ 'x-token-auth' if (is_workspace_token | default(false) or is_repo_token | default(false)) else bitbucket_username }}"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
-      
-    - name: Force x-token-auth if git_auth_username is not set (safety fallback)
+        - is_bitbucket_cloud
+
+    - name: Determine git username (Bitbucket Server - always use username)
       ansible.builtin.set_fact:
-        git_auth_username: "x-token-auth"
+        git_auth_username: "{{ bitbucket_username }}"
       when:
-        - git_auth_username is not defined or git_auth_username | length == 0
-        - bitbucket_api_token is defined
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
 
     - name: Display git authentication method
       ansible.builtin.debug:
         msg:
           - "════════════════════════════════════════════════════════════════"
           - "Git Authentication Setup:"
-          - "  Token Type: {{ 'Workspace Access Token (ATCTT)' if (is_workspace_token | default(false)) else 'Repository Access Token (ATATT)' if (is_repo_token | default(false)) else 'App Password (ATBB)' if (is_app_password | default(false)) else 'Unknown' }}"
+          - "  Environment: {{ 'Bitbucket Cloud' if is_bitbucket_cloud else 'Bitbucket Server/Data Center' }}"
+          - "  {{ 'Token Type: ' + ('Workspace Access Token (ATCTT)' if (is_workspace_token | default(false)) else 'Repository Access Token (ATATT)' if (is_repo_token | default(false)) else 'App Password (ATBB)' if (is_app_password | default(false)) else 'Personal Access Token') }}"
           - "  Git Username: {{ git_auth_username }}"
-          - "  Host: {{ bitbucket_host }}"
-          - "  {{ '✅ Using x-token-auth (correct for Workspace/Repo tokens)' if git_auth_username == 'x-token-auth' else '✅ Using Bitbucket username (correct for App Passwords)' }}"
+          - "  Host: {{ bitbucket_host_with_port }}"
+          - "  {{ '✅ Using x-token-auth (correct for Workspace/Repo tokens)' if git_auth_username == 'x-token-auth' else '✅ Using Bitbucket username (correct for App Passwords / Server PAT)' }}"
           - "════════════════════════════════════════════════════════════════"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Create git credentials file for Bitbucket
+    - name: Create git credentials file with authentication
       ansible.builtin.copy:
         content: |
-          https://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}
+          http://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host_with_port }}
+          https://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host_with_port }}
         dest: "{{ ansible_env.HOME }}/.git-credentials"
         mode: '0600'
       when: 
@@ -383,42 +422,65 @@
         - bitbucket_api_token | default('') | length > 0
       no_log: true
 
+    - name: Build authenticated git URL for cloning
+      ansible.builtin.set_fact:
+        git_repo_url_with_auth: "{{ git_repo_url | regex_replace('^(https?://)(.*)$', '\\1' + git_auth_username + ':' + bitbucket_api_token + '@\\2') }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - git_repo_url.startswith('http')
+      no_log: true
+
+    - name: Use original URL if no credentials or SSH
+      ansible.builtin.set_fact:
+        git_repo_url_with_auth: "{{ git_repo_url }}"
+      when: >
+        git_repo_url_with_auth is not defined
+
     - name: Clone git repository
       ansible.builtin.git:
-        repo: "{{ git_repo_url }}"
+        repo: "{{ git_repo_url_with_auth }}"
         dest: "{{ git_repo_local_path }}"
         version: main
         accept_hostkey: yes
       register: git_clone
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
+      no_log: true
 
-    - name: Extract repository path from URL
+    - name: Display clone result
+      ansible.builtin.debug:
+        msg: "✓ Repository cloned successfully to {{ git_repo_local_path }}"
+
+    - name: Extract repository path from URL (Bitbucket Cloud format)
       ansible.builtin.set_fact:
-        repo_path: "{{ git_repo_url | regex_replace('^https://[^@]*@?[^/]+/(.*)$', '\\1') | regex_replace('^git@[^:]+:(.*)$', '\\1') }}"
+        repo_path: "{{ git_repo_url | regex_replace('^https?://[^@]*@?[^/]+/(.*)$', '\\1') | regex_replace('^git@[^:]+:(.*)$', '\\1') }}"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
+
+    - name: Extract repository path from URL (Bitbucket Server format - /scm/PROJECT/repo.git)
+      ansible.builtin.set_fact:
+        repo_path: "{{ git_repo_url | regex_replace('^https?://[^@]*@?[^/]+/(.*)$', '\\1') }}"
+        bitbucket_project: "{{ git_repo_url | regex_replace('^.*/scm/([^/]+)/.*$', '\\1') }}"
+        bitbucket_repo_slug: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
 
     - name: Display repository path for verification
       ansible.builtin.debug:
         msg:
-          - "Bitbucket Host: {{ bitbucket_host }}"
+          - "Bitbucket Host: {{ bitbucket_host_with_port }}"
           - "Repository Path: {{ repo_path }}"
+          - "{{ 'Project: ' + bitbucket_project if is_bitbucket_server else '' }}"
+          - "{{ 'Repository Slug: ' + bitbucket_repo_slug if is_bitbucket_server else '' }}"
           - "Username: {{ bitbucket_username }}"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
-
-    - name: Normalize git remote URL to use credentials (with correct username for token type)
-      ansible.builtin.command:
-        cmd: "git remote set-url origin https://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host }}/{{ repo_path }}"
-        chdir: "{{ git_repo_local_path }}"
-      when: 
-        - bitbucket_username | default('') | length > 0
-        - bitbucket_api_token | default('') | length > 0
-      no_log: true
-      changed_when: false
 
     - name: Verify git remote URL (masked)
       ansible.builtin.command:
@@ -452,7 +514,11 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Test Bitbucket API authentication with Bearer token
+    # ============================================================================
+    # BITBUCKET CLOUD API AUTHENTICATION TESTS
+    # ============================================================================
+    
+    - name: Test Bitbucket Cloud API authentication with Bearer token
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/user"
         method: GET
@@ -465,10 +531,11 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
         - not (is_workspace_token | default(false))
         - not (is_repo_token | default(false))
 
-    - name: Test Bitbucket API authentication with Basic Auth (App Password)
+    - name: Test Bitbucket Cloud API authentication with Basic Auth (App Password)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/user"
         method: GET
@@ -482,23 +549,56 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
         - bitbucket_auth_test_bearer is defined
         - bitbucket_auth_test_bearer is failed
         - not (is_workspace_token | default(false))
         - not (is_repo_token | default(false))
 
-    - name: Set authentication method based on test results
+    # ============================================================================
+    # BITBUCKET SERVER API AUTHENTICATION TEST
+    # ============================================================================
+    
+    - name: Test Bitbucket Server API authentication
+      ansible.builtin.uri:
+        url: "http://{{ bitbucket_host_with_port }}/rest/api/1.0/application-properties"
+        method: GET
+        user: "{{ bitbucket_username }}"
+        password: "{{ bitbucket_api_token }}"
+        force_basic_auth: yes
+        status_code: [200, 401]
+        validate_certs: no
+      register: bitbucket_server_auth_test
+      ignore_errors: yes
+      no_log: false
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
+
+    - name: Set authentication method based on test results (Bitbucket Cloud)
       ansible.builtin.set_fact:
         bitbucket_auth_test: "{{ bitbucket_auth_test_bearer if bitbucket_auth_test_bearer is succeeded else bitbucket_auth_test_basic }}"
         bitbucket_auth_method: "{{ 'bearer' if bitbucket_auth_test_bearer is succeeded else 'basic' }}"
       when:
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
 
-    - name: Display API authentication result
+    - name: Set authentication method for Bitbucket Server
+      ansible.builtin.set_fact:
+        bitbucket_auth_test: "{{ bitbucket_server_auth_test }}"
+        bitbucket_auth_method: "basic"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
+        - bitbucket_server_auth_test is defined
+
+    - name: Display API authentication result (Bitbucket Cloud)
       ansible.builtin.debug:
         msg: 
-          - "Bitbucket API authentication: {{ 'SUCCESS ✓' if bitbucket_auth_test is succeeded else 'FAILED ✗' }}"
+          - "Bitbucket Cloud API authentication: {{ 'SUCCESS ✓' if bitbucket_auth_test is succeeded else 'FAILED ✗' }}"
           - "Authentication method: {{ bitbucket_auth_method | upper if bitbucket_auth_method is defined else 'N/A' }}"
           - "{{ 'Bearer token test failed with: ' + (bitbucket_auth_test_bearer.msg | default('Unknown error')) if bitbucket_auth_test_bearer is defined and bitbucket_auth_test_bearer is failed else '' }}"
           - "{{ 'Basic Auth test failed with: ' + (bitbucket_auth_test_basic.msg | default('Unknown error')) if bitbucket_auth_test_basic is defined and bitbucket_auth_test_basic is failed else '' }}"
@@ -506,12 +606,26 @@
         - bitbucket_auth_test is defined
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
 
-    - name: Display API authentication failure details (non-fatal)
+    - name: Display API authentication result (Bitbucket Server)
+      ansible.builtin.debug:
+        msg:
+          - "Bitbucket Server API authentication: {{ 'SUCCESS ✓' if bitbucket_auth_test is succeeded else 'FAILED ✗ (Non-Fatal)' }}"
+          - "Authentication method: BASIC AUTH"
+          - "API Endpoint: http://{{ bitbucket_host_with_port }}/rest/api/1.0/"
+          - "{{ 'Note: API auth failed but git operations should still work' if bitbucket_auth_test is failed else '' }}"
+      when:
+        - bitbucket_auth_test is defined
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
+
+    - name: Display API authentication failure details (non-fatal - Bitbucket Cloud)
       ansible.builtin.debug:
         msg: |
           ╔════════════════════════════════════════════════════════════════╗
-          ║  Bitbucket API Authentication Failed (401 Unauthorized)        ║
+          ║  Bitbucket Cloud API Authentication Failed (401 Unauthorized)  ║
           ╚════════════════════════════════════════════════════════════════╝
           
           ❌ BOTH authentication methods failed!
@@ -621,6 +735,7 @@
         - bitbucket_auth_test is failed
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
 
     - name: Skip API-based PR creation due to auth failure
       ansible.builtin.set_fact:
@@ -629,15 +744,20 @@
         - bitbucket_auth_test is defined
         - bitbucket_auth_test is failed
 
-    - name: Extract workspace and repo for repository check
+    # ============================================================================
+    # REPOSITORY ACCESS TESTS
+    # ============================================================================
+    
+    - name: Extract workspace and repo for repository check (Bitbucket Cloud)
       ansible.builtin.set_fact:
-        check_workspace: "{{ git_repo_url | regex_replace('^https://[^@]*@?[^/]+/([^/]+)/.*$', '\\1') | regex_replace('^git@[^:]+:([^/]+)/.*$', '\\1') }}"
+        check_workspace: "{{ git_repo_url | regex_replace('^https?://[^@]*@?[^/]+/([^/]+)/.*$', '\\1') | regex_replace('^git@[^:]+:([^/]+)/.*$', '\\1') }}"
         check_repo_slug: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
 
-    - name: Test repository access (Bearer auth)
+    - name: Test repository access (Bitbucket Cloud - Bearer auth)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ check_workspace }}/{{ check_repo_slug }}"
         method: GET
@@ -650,12 +770,13 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
         - bitbucket_auth_method is defined
         - bitbucket_auth_method == 'bearer'
         - not (is_workspace_token | default(false))
         - not (is_repo_token | default(false))
 
-    - name: Test repository access (Basic auth)
+    - name: Test repository access (Bitbucket Cloud - Basic auth)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ check_workspace }}/{{ check_repo_slug }}"
         method: GET
@@ -669,12 +790,32 @@
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
         - bitbucket_auth_method is defined
         - bitbucket_auth_method == 'basic'
         - not (is_workspace_token | default(false))
         - not (is_repo_token | default(false))
 
-    - name: Display repository access result
+    - name: Test repository access (Bitbucket Server)
+      ansible.builtin.uri:
+        url: "http://{{ bitbucket_host_with_port }}/rest/api/1.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}"
+        method: GET
+        user: "{{ bitbucket_username }}"
+        password: "{{ bitbucket_api_token }}"
+        force_basic_auth: yes
+        status_code: 200
+        validate_certs: no
+      register: repo_access_test
+      ignore_errors: yes
+      no_log: false
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
+        - bitbucket_project is defined
+        - bitbucket_repo_slug is defined
+
+    - name: Display repository access result (Bitbucket Cloud)
       ansible.builtin.debug:
         msg: 
           - "Repository access check: {{ 'SUCCESS ✓' if repo_access_test is succeeded else 'FAILED ✗' }}"
@@ -683,8 +824,21 @@
         - repo_access_test is defined
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
 
-    - name: Display repository access check failure (non-fatal)
+    - name: Display repository access result (Bitbucket Server)
+      ansible.builtin.debug:
+        msg:
+          - "Repository access check: {{ 'SUCCESS ✓' if repo_access_test is succeeded else 'FAILED ✗ (Non-Fatal)' }}"
+          - "Project: {{ bitbucket_project }}"
+          - "Repository: {{ bitbucket_repo_slug }}"
+      when:
+        - repo_access_test is defined
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
+
+    - name: Display repository access check failure (non-fatal - Bitbucket Cloud)
       ansible.builtin.debug:
         msg: |
           ╔════════════════════════════════════════════════════════════════╗
@@ -719,6 +873,44 @@
         - repo_access_test is failed
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
+
+    - name: Display repository access check failure (non-fatal - Bitbucket Server)
+      ansible.builtin.debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  Repository API Access Check Failed (Non-Fatal)                ║
+          ╚════════════════════════════════════════════════════════════════╝
+          
+          ⚠️  Cannot verify repository access via API
+          
+          This is OK! This check only affects API-based PR creation.
+          The playbook will continue and:
+            ✅ Push your branch using Git
+            ✅ Generate a URL for you to create the PR manually
+          
+          Possible reasons for API failure:
+          ─────────────────────────────────────────────────────────────────
+          • Token missing API scopes
+          • Repository permissions issue
+          • API endpoint not accessible
+          
+          Repository Details:
+          ─────────────────────────────────────────────────────────────────
+          • Repository URL: {{ git_repo_url }}
+          • Project: {{ bitbucket_project }}
+          • Repository: {{ bitbucket_repo_slug }}
+          • Username: {{ bitbucket_username }}
+          
+          ══════════════════════════════════════════════════════════════════
+          Continuing with git operations (which will work fine)...
+          ══════════════════════════════════════════════════════════════════
+      when:
+        - repo_access_test is defined
+        - repo_access_test is failed
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
 
     - name: Create deployments directory if it doesn't exist
       ansible.builtin.file:
@@ -809,16 +1001,21 @@
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
         GIT_ASKPASS: "echo"  # Prevent password prompts
 
-    - name: Extract Bitbucket workspace and repository from URL
+    # ============================================================================
+    # PULL REQUEST CREATION
+    # ============================================================================
+    
+    - name: Extract Bitbucket workspace and repository from URL (Cloud)
       ansible.builtin.set_fact:
-        bitbucket_workspace: "{{ git_repo_url | regex_replace('^https://[^@]*@?[^/]+/([^/]+)/.*$', '\\1') | regex_replace('^git@[^:]+:([^/]+)/.*$', '\\1') }}"
-        bitbucket_repo_slug: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
+        bitbucket_workspace: "{{ git_repo_url | regex_replace('^https?://[^@]*@?[^/]+/([^/]+)/.*$', '\\1') | regex_replace('^git@[^:]+:([^/]+)/.*$', '\\1') }}"
       when: 
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
+        - bitbucket_repo_slug is not defined
 
-    - name: Debug - Show extracted Bitbucket info
+    - name: Debug - Show extracted Bitbucket info (Cloud)
       ansible.builtin.debug:
         msg:
           - "Bitbucket Repo URL: {{ git_repo_url }}"
@@ -831,8 +1028,24 @@
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
 
-    - name: Create Pull Request using Bitbucket API (Bearer auth)
+    - name: Debug - Show extracted Bitbucket info (Server)
+      ansible.builtin.debug:
+        msg:
+          - "Bitbucket Repo URL: {{ git_repo_url }}"
+          - "Extracted Project: {{ bitbucket_project }}"
+          - "Extracted Repo Slug: {{ bitbucket_repo_slug }}"
+          - "API URL: http://{{ bitbucket_host_with_port }}/rest/api/1.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
+          - "Source Branch: {{ git_branch_name }}"
+          - "Destination Branch: {{ git_default_branch }}"
+      when:
+        - create_pull_request == 'yes'
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
+
+    - name: Create Pull Request using Bitbucket Cloud API (Bearer auth)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
         method: POST
@@ -859,10 +1072,11 @@
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
         - bitbucket_auth_method == 'bearer'
         - skip_api_pr_creation is not defined or not skip_api_pr_creation
 
-    - name: Create Pull Request using Bitbucket API (Basic auth)
+    - name: Create Pull Request using Bitbucket Cloud API (Basic auth)
       ansible.builtin.uri:
         url: "https://api.bitbucket.org/2.0/repositories/{{ bitbucket_workspace }}/{{ bitbucket_repo_slug }}/pullrequests"
         method: POST
@@ -891,7 +1105,46 @@
         - create_pull_request == 'yes'
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_cloud
         - bitbucket_auth_method == 'basic'
+        - skip_api_pr_creation is not defined or not skip_api_pr_creation
+
+    - name: Create Pull Request using Bitbucket Server API
+      ansible.builtin.uri:
+        url: "http://{{ bitbucket_host_with_port }}/rest/api/1.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
+        method: POST
+        user: "{{ bitbucket_username }}"
+        password: "{{ bitbucket_api_token }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          title: "{{ pr_title }}"
+          description: "{{ pr_body }}"
+          fromRef:
+            id: "refs/heads/{{ git_branch_name }}"
+            repository:
+              slug: "{{ bitbucket_repo_slug }}"
+              project:
+                key: "{{ bitbucket_project }}"
+          toRef:
+            id: "refs/heads/{{ git_default_branch }}"
+            repository:
+              slug: "{{ bitbucket_repo_slug }}"
+              project:
+                key: "{{ bitbucket_project }}"
+        status_code: 201
+        validate_certs: no
+        return_content: yes
+      register: pr_create
+      ignore_errors: yes
+      no_log: false
+      when:
+        - create_pull_request == 'yes'
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - is_bitbucket_server
         - skip_api_pr_creation is not defined or not skip_api_pr_creation
 
     - name: Debug - Show API error if PR creation failed
@@ -905,10 +1158,10 @@
         - pr_create is defined
         - pr_create is failed
 
-    - name: Display PR creation result (API success)
+    - name: Display PR creation result (Bitbucket Cloud - API success)
       ansible.builtin.debug:
         msg: 
-          - "✓ Pull Request created successfully via API!"
+          - "✓ Pull Request created successfully via Bitbucket Cloud API!"
           - "{{ 'PR #' + (pr_create.json.id | string) + ': ' + pr_create.json.title if pr_create.json is defined and pr_create.json.id is defined else 'PR created but details not available' }}"
           - "{{ 'URL: ' + pr_create.json.links.html.href if pr_create.json is defined and pr_create.json.links is defined else '' }}"
           - "{{ 'Status: ' + pr_create.json.state if pr_create.json is defined and pr_create.json.state is defined else '' }}"
@@ -918,16 +1171,42 @@
         - pr_create is not skipped
         - pr_create is succeeded
         - pr_create.json is defined
+        - is_bitbucket_cloud
 
-    - name: Generate PR creation URL
+    - name: Display PR creation result (Bitbucket Server - API success)
+      ansible.builtin.debug:
+        msg:
+          - "✓ Pull Request created successfully via Bitbucket Server API!"
+          - "{{ 'PR #' + (pr_create.json.id | string) + ': ' + pr_create.json.title if pr_create.json is defined and pr_create.json.id is defined else 'PR created but details not available' }}"
+          - "{{ 'URL: http://' + bitbucket_host_with_port + '/projects/' + bitbucket_project + '/repos/' + bitbucket_repo_slug + '/pull-requests/' + (pr_create.json.id | string) if pr_create.json is defined and pr_create.json.id is defined else '' }}"
+          - "{{ 'Status: ' + pr_create.json.state if pr_create.json is defined and pr_create.json.state is defined else '' }}"
+      when:
+        - create_pull_request == 'yes'
+        - pr_create is defined
+        - pr_create is not skipped
+        - pr_create is succeeded
+        - pr_create.json is defined
+        - is_bitbucket_server
+
+    - name: Generate PR creation URL (Bitbucket Cloud)
       ansible.builtin.set_fact:
         pr_creation_url: "https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/{{ bitbucket_repo_slug | default('REPO') }}/pull-requests/new?source={{ git_branch_name }}&dest={{ git_default_branch }}"
         workspace_pr_dashboard: "https://bitbucket.org/{{ bitbucket_workspace | default('WORKSPACE') }}/workspace/pull-requests/"
       when: 
+        - is_bitbucket_cloud
         - bitbucket_workspace is defined
         - bitbucket_repo_slug is defined
 
-    - name: Display PR creation instructions
+    - name: Generate PR creation URL (Bitbucket Server)
+      ansible.builtin.set_fact:
+        pr_creation_url: "http://{{ bitbucket_host_with_port }}/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests?create&sourceBranch=refs/heads/{{ git_branch_name }}"
+        workspace_pr_dashboard: "http://{{ bitbucket_host_with_port }}/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
+      when:
+        - is_bitbucket_server
+        - bitbucket_project is defined
+        - bitbucket_repo_slug is defined
+
+    - name: Display PR creation instructions (Bitbucket Cloud)
       ansible.builtin.debug:
         msg:
           - ""
@@ -956,6 +1235,35 @@
           - ""
       when: 
         - git_branch_name is defined
+        - is_bitbucket_cloud
+
+    - name: Display PR creation instructions (Bitbucket Server)
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Branch Pushed Successfully!                                   ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✓ Branch pushed successfully: {{ git_branch_name }}"
+          - "✓ Configuration file ready: {{ output_filename }}"
+          - ""
+          - "📋 Create Pull Request:"
+          - "   {{ pr_creation_url if pr_creation_url is defined else 'URL generation skipped' }}"
+          - ""
+          - "PR Details:"
+          - "  • Title: {{ pr_title }}"
+          - "  • Source: {{ git_branch_name }}"
+          - "  • Destination: {{ git_default_branch }}"
+          - "  • Project: {{ bitbucket_project | default('') }}"
+          - "  • Repository: {{ bitbucket_repo_slug | default('') }}"
+          - ""
+          - "📊 View all repository PRs:"
+          - "   {{ workspace_pr_dashboard if workspace_pr_dashboard is defined else 'URL not available' }}"
+          - ""
+      when:
+        - git_branch_name is defined
+        - is_bitbucket_server
 
     - name: Cleanup temporary repository
       ansible.builtin.file:
@@ -981,7 +1289,7 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: Final Summary
+    - name: Final Summary (Bitbucket Cloud)
       ansible.builtin.debug:
         msg:
           - "╔════════════════════════════════════════════════════════════════╗"
@@ -1005,4 +1313,31 @@
           - ""
           - "AAP Job ID: {{ tower_job_id | default('N/A') }}"
           - "Executed by: {{ tower_user_name | default('Unknown') }}"
+      when: is_bitbucket_cloud
+
+    - name: Final Summary (Bitbucket Server)
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  AAP Job Complete!                                             ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
+          - "✓ Configuration generated for: {{ cluster_name }}"
+          - "✓ Environment: {{ environment | upper }}"
+          - "✓ File: {{ output_filename }}"
+          - "✓ Branch: {{ git_branch_name }}"
+          - "{{ '✓ Pull Request created via API' if (create_pull_request == 'yes' and pr_create is defined and pr_create is succeeded) else '✓ Branch pushed - create PR manually' }}"
+          - ""
+          - "📊 View All Repository Pull Requests:"
+          - "   http://{{ bitbucket_host_with_port }}/projects/{{ bitbucket_project | default('PROJECT') }}/repos/{{ bitbucket_repo_slug | default('REPO') }}/pull-requests"
+          - ""
+          - "Next steps:"
+          - "  1. Review the Pull Request"
+          - "  2. Get necessary approvals"
+          - "  3. Merge to main branch"
+          - "  4. Deploy using the generated configuration"
+          - ""
+          - "AAP Job ID: {{ tower_job_id | default('N/A') }}"
+          - "Executed by: {{ tower_user_name | default('Unknown') }}"
+      when: is_bitbucket_server
 
