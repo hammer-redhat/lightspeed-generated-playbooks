@@ -422,12 +422,26 @@
         - bitbucket_api_token | default('') | length > 0
       no_log: true
 
+    - name: Verify git_auth_username is set
+      ansible.builtin.assert:
+        that:
+          - git_auth_username is defined
+          - git_auth_username | length > 0
+        fail_msg: |
+          git_auth_username is not defined. This should have been set earlier.
+          Please check the authentication setup tasks.
+        success_msg: "git_auth_username is set to: {{ git_auth_username }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+
     - name: Build authenticated git URL for cloning
       ansible.builtin.set_fact:
         git_repo_url_with_auth: "{{ git_repo_url | regex_replace('^(https?://)(.*)$', '\\1' + git_auth_username + ':' + bitbucket_api_token + '@\\2') }}"
       when:
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - git_auth_username is defined
         - git_repo_url.startswith('http')
       no_log: true
 
@@ -436,6 +450,10 @@
         git_repo_url_with_auth: "{{ git_repo_url }}"
       when: >
         git_repo_url_with_auth is not defined
+
+    - name: Display masked clone URL for debugging
+      ansible.builtin.debug:
+        msg: "Clone URL (masked): {{ git_repo_url_with_auth | regex_replace('(https?://)([^:]+):([^@]+)@(.+)', '\\1\\2:***TOKEN***@\\4') if git_repo_url_with_auth is defined else 'Not set' }}"
 
     - name: Clone git repository
       ansible.builtin.git:
@@ -446,11 +464,28 @@
       register: git_clone
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
-      no_log: true
+
+    - name: Display clone error if failed
+      ansible.builtin.debug:
+        msg:
+          - "Git clone failed!"
+          - "Error: {{ git_clone.msg | default('No error message') }}"
+          - "Stdout: {{ git_clone.stdout | default('No stdout') }}"
+          - "Stderr: {{ git_clone.stderr | default('No stderr') }}"
+      when: git_clone is failed
+
+    - name: Fail with detailed error message
+      ansible.builtin.fail:
+        msg: |
+          Git clone failed. See error details above.
+          Repository: {{ git_repo_url }}
+          Destination: {{ git_repo_local_path }}
+      when: git_clone is failed
 
     - name: Display clone result
       ansible.builtin.debug:
         msg: "✓ Repository cloned successfully to {{ git_repo_local_path }}"
+      when: git_clone is succeeded
 
     - name: Extract repository path from URL (Bitbucket Cloud format)
       ansible.builtin.set_fact:
@@ -1036,7 +1071,7 @@
           - "Bitbucket Repo URL: {{ git_repo_url }}"
           - "Extracted Project: {{ bitbucket_project }}"
           - "Extracted Repo Slug: {{ bitbucket_repo_slug }}"
-          - "API URL: http://{{ bitbucket_host_with_port }}/rest/api/1.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
+          - "API URL: http://{{ bitbucket_host_with_port }}/rest/api/updated.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
           - "Source Branch: {{ git_branch_name }}"
           - "Destination Branch: {{ git_default_branch }}"
       when:
