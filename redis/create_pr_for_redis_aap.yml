@@ -515,7 +515,7 @@
       ansible.builtin.debug:
         msg: "Clone URL (masked): {{ git_repo_url_with_auth | regex_replace('(https?://)([^:]+):([^@]+)@(.+)', '\\1\\2:***TOKEN***@\\4') if git_repo_url_with_auth is defined else 'Not set' }}"
 
-    - name: Clone git repository
+    - name: Clone git repository (try main branch)
       ansible.builtin.git:
         repo: "{{ git_repo_url_with_auth }}"
         dest: "{{ git_repo_local_path }}"
@@ -524,6 +524,57 @@
       register: git_clone
       environment:
         GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
+      failed_when: false
+
+    - name: Clone git repository (try master branch if main failed)
+      ansible.builtin.git:
+        repo: "{{ git_repo_url_with_auth }}"
+        dest: "{{ git_repo_local_path }}"
+        version: master
+        accept_hostkey: yes
+      register: git_clone_master
+      environment:
+        GIT_TERMINAL_PROMPT: "0"  # Disable interactive prompts
+      when: git_clone is failed
+
+    - name: Initialize empty repository if both branches failed
+      block:
+        - name: Clone without version (empty repo)
+          ansible.builtin.command:
+            cmd: git clone {{ git_repo_url_with_auth }} {{ git_repo_local_path }}
+          environment:
+            GIT_TERMINAL_PROMPT: "0"
+          no_log: true
+
+        - name: Configure git in empty repo
+          ansible.builtin.command:
+            cmd: "{{ item }}"
+            chdir: "{{ git_repo_local_path }}"
+          loop:
+            - "git config user.name 'Ansible Automation Platform'"
+            - "git config user.email 'aap-redis-automation@example.com'"
+          changed_when: false
+
+        - name: Create initial commit
+          ansible.builtin.shell:
+            cmd: |
+              echo "# Redis Configurations" > README.md
+              mkdir -p deployments
+              touch deployments/.gitkeep
+              git add .
+              git commit -m "Initial commit - Repository initialized by AAP"
+              git push origin main
+            chdir: "{{ git_repo_local_path }}"
+          environment:
+            GIT_TERMINAL_PROMPT: "0"
+
+        - name: Set git_clone result to success
+          ansible.builtin.set_fact:
+            git_clone: "{{ {'failed': false, 'changed': true, 'msg': 'Repository initialized'} }}"
+      when:
+        - git_clone is failed
+        - git_clone_master is defined
+        - git_clone_master is failed
 
     - name: Display clone error if failed
       ansible.builtin.debug:
@@ -677,8 +728,10 @@
 
     - name: Display clone result
       ansible.builtin.debug:
-        msg: "✓ Repository cloned successfully to {{ git_repo_local_path }}"
-      when: git_clone is succeeded
+        msg: "{{ '✓ Repository cloned successfully to ' + git_repo_local_path if not git_clone.msg is defined or 'initialized' not in git_clone.msg else '✓ Empty repository initialized at ' + git_repo_local_path }}"
+      when:
+        - git_clone is defined
+        - not git_clone.failed
 
     - name: Extract repository path from URL (Bitbucket Cloud format)
       ansible.builtin.set_fact:
@@ -718,32 +771,8 @@
       changed_when: false
       no_log: false
 
-    - name: Display masked remote URL
-      ansible.builtin.debug:
-        msg: 
-          - "Git remote URL configured:"
-          - "  {{ git_remote_url.stdout | regex_replace('(https://)([^:]+):([^@]+)(@.+)', '\\1\\2:***TOKEN***\\4') }}"
-          - "  Username for git: {{ git_auth_username }}"
-      when: git_remote_url is defined
-
-    - name: Display token type hint
-      ansible.builtin.debug:
-        msg:
-          - "Token prefix detected: {{ token_prefix }}***"
-          - "Token length: {{ bitbucket_api_token | length }} characters"
-          - "{{ 'Token Type: Workspace Access Token (ATCTT) - Good for Git, not for API' if is_workspace_token else '' }}"
-          - "{{ 'Token Type: Repository Access Token (ATATT) - Limited functionality' if is_repo_token else '' }}"
-          - "{{ 'Token Type: App Password (ATBB) - Full API support' if is_app_password else '' }}"
-          - "{{ 'API Checks: SKIPPED (Workspace tokens do not support API endpoints)' if is_workspace_token else 'API Checks: ENABLED (will attempt API authentication)' }}"
-          - ""
-          - "{{ 'ℹ️  Workspace Token detected - skipping API tests, will use git operations only' if is_workspace_token else '' }}"
-      when: 
-        - token_prefix is defined
-        - bitbucket_username | default('') | length > 0
-        - bitbucket_api_token | default('') | length > 0
-
     # ============================================================================
-    # BITBUCKET CLOUD API AUTHENTICATION TESTS
+    # API AUTHENTICATION TESTS
     # ============================================================================
     
     - name: Test Bitbucket Cloud API authentication with Bearer token
