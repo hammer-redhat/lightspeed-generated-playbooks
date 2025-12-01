@@ -418,16 +418,25 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
+    - name: URL-encode token for git credentials file
+      ansible.builtin.set_fact:
+        encoded_token_for_creds: "{{ bitbucket_api_token | urlencode }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+      no_log: true
+
     - name: Create git credentials file with authentication
       ansible.builtin.copy:
         content: |
-          http://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host_with_port }}
-          https://{{ git_auth_username }}:{{ bitbucket_api_token }}@{{ bitbucket_host_with_port }}
+          http://{{ git_auth_username }}:{{ encoded_token_for_creds }}@{{ bitbucket_host_with_port }}
+          https://{{ git_auth_username }}:{{ encoded_token_for_creds }}@{{ bitbucket_host_with_port }}
         dest: "{{ ansible_env.HOME }}/.git-credentials"
         mode: '0600'
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+        - encoded_token_for_creds is defined
       no_log: true
 
     - name: Verify git_auth_username is set
@@ -443,13 +452,23 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
+    - name: URL-encode the token for safe embedding in URL
+      ansible.builtin.set_fact:
+        encoded_token: "{{ bitbucket_api_token | urlencode }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - git_repo_url.startswith('http')
+      no_log: true
+
     - name: Build authenticated git URL for cloning
       ansible.builtin.set_fact:
-        git_repo_url_with_auth: "{{ git_repo_url | regex_replace('^(https?://)(.*)$', '\\1' + git_auth_username + ':' + bitbucket_api_token + '@\\2') }}"
+        git_repo_url_with_auth: "{{ git_repo_url | regex_replace('^(https?://)(.*)$', '\\1' + git_auth_username + ':' + encoded_token + '@\\2') }}"
       when:
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
         - git_auth_username is defined
+        - encoded_token is defined
         - git_repo_url.startswith('http')
       no_log: true
 
@@ -458,6 +477,16 @@
         git_repo_url_with_auth: "{{ git_repo_url }}"
       when: >
         git_repo_url_with_auth is not defined
+
+    - name: Display token encoding info
+      ansible.builtin.debug:
+        msg:
+          - "Token Encoding:"
+          - "  Original token contains special characters: {{ 'YES (URL-encoded)' if ('/' in bitbucket_api_token or '@' in bitbucket_api_token or ':' in bitbucket_api_token) else 'NO' }}"
+          - "  {{ 'Special chars detected: / @ : (these will be percent-encoded)' if ('/' in bitbucket_api_token or '@' in bitbucket_api_token or ':' in bitbucket_api_token) else '' }}"
+      when:
+        - bitbucket_api_token is defined
+        - git_repo_url_with_auth is defined
 
     - name: Display masked clone URL for debugging
       ansible.builtin.debug:
@@ -488,6 +517,42 @@
           - "Username: {{ bitbucket_username }}"
           - "Token Type: {{ 'HTTP Access Token (BBDC)' if token_prefix is defined and token_prefix.startswith('BBDC') else 'Personal Access Token or other' }}"
       when: git_clone is failed
+
+    - name: Display URL format error specific help
+      ansible.builtin.debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  URL FORMAT ERROR - Special Characters in Token               ║
+          ╚════════════════════════════════════════════════════════════════╝
+          
+          Your token contains special characters that break URL formatting.
+          
+          🔍 ISSUE DETECTED:
+          ─────────────────────────────────────────────────────────────────
+          Token contains: / (forward slash) or other special characters
+          Git error: "URL using bad/illegal format or missing URL"
+          
+          ⚠️  This should have been automatically fixed by URL encoding!
+          
+          🔧 TROUBLESHOOTING:
+          ─────────────────────────────────────────────────────────────────
+          The playbook uses {{ '{{ bitbucket_api_token | urlencode }}' }} to handle
+          special characters, but something may have gone wrong.
+          
+          Please report this as a bug with:
+          - Token prefix: {{ token_prefix if token_prefix is defined else 'Unknown' }}
+          - Bitbucket version
+          - This error message
+          
+          WORKAROUND: Try creating a new token and ensure it doesn't contain:
+          - Forward slashes (/)
+          - At signs (@)
+          - Colons (:)
+          - Other special characters
+      when:
+        - git_clone is failed
+        - git_clone.msg is defined
+        - "'bad/illegal format' in git_clone.msg or 'bad/illegal format' in (git_clone.stderr | default(''))"
 
     - name: Display 403 Forbidden specific help
       ansible.builtin.debug:
