@@ -361,8 +361,16 @@
       ansible.builtin.debug:
         msg:
           - "Token Analysis (Bitbucket Server/Data Center):"
-          - "  Using Personal Access Token or HTTP Access Token"
           - "  Token prefix: {{ token_prefix }}***"
+          - "  {{ 'Detected: HTTP Access Token (BBDC)' if token_prefix.startswith('BBDC') else 'Detected: Personal Access Token or other' }}"
+          - ""
+          - "⚠️  IMPORTANT: For Bitbucket Server/Data Center:"
+          - "  • HTTP Access Tokens: May only work for specific repositories"
+          - "  • Personal Access Tokens: Recommended for broader access"
+          - "  • User must have explicit repository permissions"
+          - ""
+          - "  Token Type Detection:"
+          - "  {{ '  HTTP Access Token (Repository-specific)' if token_prefix.startswith('BBDC') else '  Personal Access Token (User-based)' }}"
       when:
         - token_prefix is defined
         - is_bitbucket_server
@@ -468,18 +476,115 @@
     - name: Display clone error if failed
       ansible.builtin.debug:
         msg:
-          - "Git clone failed!"
+          - "╔════════════════════════════════════════════════════════════════╗"
+          - "║  Git Clone Failed!                                             ║"
+          - "╚════════════════════════════════════════════════════════════════╝"
+          - ""
           - "Error: {{ git_clone.msg | default('No error message') }}"
-          - "Stdout: {{ git_clone.stdout | default('No stdout') }}"
+          - "Return Code: {{ git_clone.rc | default('N/A') }}"
           - "Stderr: {{ git_clone.stderr | default('No stderr') }}"
+          - ""
+          - "Repository: {{ git_repo_url }}"
+          - "Username: {{ bitbucket_username }}"
+          - "Token Type: {{ 'HTTP Access Token (BBDC)' if token_prefix is defined and token_prefix.startswith('BBDC') else 'Personal Access Token or other' }}"
       when: git_clone is failed
+
+    - name: Display 403 Forbidden specific help
+      ansible.builtin.debug:
+        msg: |
+          ╔════════════════════════════════════════════════════════════════╗
+          ║  HTTP 403 FORBIDDEN - Authentication Rejected                  ║
+          ╚════════════════════════════════════════════════════════════════╝
+          
+          Your credentials are being sent but Bitbucket Server is rejecting them.
+          
+          🔍 DETECTED ISSUE:
+          ─────────────────────────────────────────────────────────────────
+          Token Type: HTTP Access Token (BBDC-...)
+          Username: {{ bitbucket_username }}
+          Repository: {{ git_repo_url }}
+          
+          ⚠️  PROBLEM: HTTP Access Tokens in Bitbucket Data Center
+          ─────────────────────────────────────────────────────────────────
+          HTTP Access Tokens are repository-specific and may not work for
+          all git operations. They are typically created at the repository
+          level and may have limited scope.
+          
+          🔧 SOLUTION: Create a Personal Access Token instead
+          ─────────────────────────────────────────────────────────────────
+          
+          Step 1: Log into Bitbucket Server/Data Center
+                  http://{{ bitbucket_host_with_port }}
+          
+          Step 2: Go to your user settings
+                  Click your avatar → Manage account
+          
+          Step 3: Create Personal Access Token
+                  Left sidebar → Personal access tokens
+                  Click "Create a token"
+          
+          Step 4: Set permissions (IMPORTANT!)
+                  Token name: "AAP Redis Automation"
+                  Permissions required:
+                    ☑️  Project Permissions: Read
+                    ☑️  Repository Permissions: Read, Write
+                    ☑️  Pull Request Permissions: Read, Write
+          
+          Step 5: Click "Create" and copy the token
+          
+          Step 6: Update AAP Survey with the new Personal Access Token
+          
+          ═══════════════════════════════════════════════════════════════════
+          
+          ALTERNATIVE: Check Current Token Permissions
+          ─────────────────────────────────────────────────────────────────
+          If you want to keep using this token:
+          
+          1. Go to: Repository Settings → HTTP access tokens
+             http://{{ bitbucket_host_with_port }}/projects/{{ bitbucket_project | default('RED') }}/repos/{{ bitbucket_repo_slug | default('redis') }}/settings/access-tokens
+          
+          2. Find your token (or the one created for user "{{ bitbucket_username }}")
+          
+          3. Verify it has:
+             • Read permission: ✓
+             • Write permission: ✓
+          
+          4. Check that user "{{ bitbucket_username }}" has access to project {{ bitbucket_project | default('RED') }}
+          
+          ═══════════════════════════════════════════════════════════════════
+          
+          OTHER POSSIBLE CAUSES:
+          ─────────────────────────────────────────────────────────────────
+          • Token expired or was revoked
+          • User "{{ bitbucket_username }}" doesn't have repository access
+          • Repository permissions changed
+          • Project permissions required but not granted
+          
+          ═══════════════════════════════════════════════════════════════════
+      when:
+        - git_clone is failed
+        - git_clone.rc is defined
+        - git_clone.rc == 128
+        - "'403' in git_clone.msg or '403' in git_clone.stderr"
 
     - name: Fail with detailed error message
       ansible.builtin.fail:
         msg: |
           Git clone failed. See error details above.
+          
+          Quick Summary:
+          ─────────────────────────────────────────────────────────────────
           Repository: {{ git_repo_url }}
-          Destination: {{ git_repo_local_path }}
+          Username: {{ bitbucket_username }}
+          Error: {{ git_clone.msg | default('Unknown error') }}
+          
+          {{ '⚠️  This appears to be a 403 Forbidden error. See the detailed help above.' if (git_clone.rc is defined and git_clone.rc == 128 and ('403' in git_clone.msg or '403' in (git_clone.stderr | default('')))) else '' }}
+          
+          Next Steps:
+          1. Review the error message above
+          2. {{ 'Create a Personal Access Token (see instructions above)' if (token_prefix is defined and token_prefix.startswith('BBDC')) else 'Check token permissions in Bitbucket Server' }}
+          3. Verify user has repository access
+          4. Rerun the job template
       when: git_clone is failed
 
     - name: Display clone result
@@ -1071,7 +1176,7 @@
           - "Bitbucket Repo URL: {{ git_repo_url }}"
           - "Extracted Project: {{ bitbucket_project }}"
           - "Extracted Repo Slug: {{ bitbucket_repo_slug }}"
-          - "API URL: http://{{ bitbucket_host_with_port }}/rest/api/updated.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
+          - "API URL: http://{{ bitbucket_host_with_port }}/rest/api/1.0/projects/{{ bitbucket_project }}/repos/{{ bitbucket_repo_slug }}/pull-requests"
           - "Source Branch: {{ git_branch_name }}"
           - "Destination Branch: {{ git_default_branch }}"
       when:
