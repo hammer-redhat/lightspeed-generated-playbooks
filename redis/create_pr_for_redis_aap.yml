@@ -418,12 +418,23 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: URL-encode token for git credentials file
-      ansible.builtin.set_fact:
-        encoded_token_for_creds: "{{ bitbucket_api_token | urlencode }}"
+    - name: URL-encode token for git credentials file using Python
+      ansible.builtin.command:
+        cmd: python3 -c "import urllib.parse; print(urllib.parse.quote('{{ bitbucket_api_token }}', safe=''))"
+      register: encoded_token_result
       when:
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
+      changed_when: false
+      no_log: true
+
+    - name: Set encoded token variable for credentials
+      ansible.builtin.set_fact:
+        encoded_token_for_creds: "{{ encoded_token_result.stdout }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - encoded_token_result is defined
       no_log: true
 
     - name: Create git credentials file with authentication
@@ -452,13 +463,24 @@
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
 
-    - name: URL-encode the token for safe embedding in URL
-      ansible.builtin.set_fact:
-        encoded_token: "{{ bitbucket_api_token | urlencode }}"
+    - name: URL-encode the token for safe embedding in URL using Python
+      ansible.builtin.command:
+        cmd: python3 -c "import urllib.parse; print(urllib.parse.quote('{{ bitbucket_api_token }}', safe=''))"
+      register: encoded_token_result_url
       when:
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
         - git_repo_url.startswith('http')
+      changed_when: false
+      no_log: true
+
+    - name: Set encoded token variable for URL
+      ansible.builtin.set_fact:
+        encoded_token: "{{ encoded_token_result_url.stdout }}"
+      when:
+        - bitbucket_username | default('') | length > 0
+        - bitbucket_api_token | default('') | length > 0
+        - encoded_token_result_url is defined
       no_log: true
 
     - name: Build authenticated git URL for cloning
@@ -482,8 +504,9 @@
       ansible.builtin.debug:
         msg:
           - "Token Encoding:"
-          - "  Original token contains special characters: {{ 'YES (URL-encoded)' if ('/' in bitbucket_api_token or '@' in bitbucket_api_token or ':' in bitbucket_api_token) else 'NO' }}"
+          - "  Original token contains special characters: {{ 'YES (URL-encoded using Python)' if ('/' in bitbucket_api_token or '@' in bitbucket_api_token or ':' in bitbucket_api_token) else 'NO' }}"
           - "  {{ 'Special chars detected: / @ : (these will be percent-encoded)' if ('/' in bitbucket_api_token or '@' in bitbucket_api_token or ':' in bitbucket_api_token) else '' }}"
+          - "  {{ 'Encoded token: ' + encoded_token[:20] + '...' if encoded_token is defined and encoded_token | length > 20 else '' }}"
       when:
         - bitbucket_api_token is defined
         - git_repo_url_with_auth is defined
@@ -536,7 +559,7 @@
           
           🔧 TROUBLESHOOTING:
           ─────────────────────────────────────────────────────────────────
-          The playbook uses {{ '{{ bitbucket_api_token | urlencode }}' }} to handle
+          The playbook uses Python's urllib.parse.quote() to handle
           special characters, but something may have gone wrong.
           
           Please report this as a bug with:

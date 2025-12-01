@@ -64,21 +64,39 @@ git_repo_url_with_auth: "http://admin:BBDC-ExampleToken%2FxB@172.16.2.1:7990/scm
 
 ### 1. Encodes Token for Git Credentials File
 ```yaml
-- name: URL-encode token for git credentials file
+- name: URL-encode token for git credentials file using Python
+  ansible.builtin.command:
+    cmd: python3 -c "import urllib.parse; print(urllib.parse.quote('{{ bitbucket_api_token }}', safe=''))"
+  register: encoded_token_result
+  
+- name: Set encoded token variable for credentials
   ansible.builtin.set_fact:
-    encoded_token_for_creds: "{{ bitbucket_api_token | urlencode }}"
+    encoded_token_for_creds: "{{ encoded_token_result.stdout }}"
 ```
 
 ### 2. Encodes Token for Clone URL
 ```yaml
-- name: URL-encode the token for safe embedding in URL
+- name: URL-encode the token for safe embedding in URL using Python
+  ansible.builtin.command:
+    cmd: python3 -c "import urllib.parse; print(urllib.parse.quote('{{ bitbucket_api_token }}', safe=''))"
+  register: encoded_token_result_url
+
+- name: Set encoded token variable for URL
   ansible.builtin.set_fact:
-    encoded_token: "{{ bitbucket_api_token | urlencode }}"
+    encoded_token: "{{ encoded_token_result_url.stdout }}"
 
 - name: Build authenticated git URL for cloning
   ansible.builtin.set_fact:
     git_repo_url_with_auth: "{{ git_repo_url | regex_replace('^(https?://)(.*)$', '\\1' + git_auth_username + ':' + encoded_token + '@\\2') }}"
 ```
+
+**Why Python instead of Ansible's urlencode filter?**
+
+The `urlencode` filter may not be available in all Ansible versions or may not encode all special characters correctly. Using Python's `urllib.parse.quote()` directly ensures:
+- ✅ Works in all Ansible environments (Python 3 is required anyway)
+- ✅ Properly encodes ALL special characters (`/`, `@`, `:`, etc.)
+- ✅ Consistent behavior across different Ansible versions
+- ✅ More reliable for automation
 
 ### 3. Detects Special Characters
 ```yaml
@@ -233,10 +251,10 @@ password: "{{ bitbucket_api_token }}"  # Raw token, not encoded
 
 If you still see `URL using bad/illegal format`:
 
-1. **Check Ansible version:**
+1. **Check Python 3 availability:**
    ```bash
-   ansible --version
-   # Need Ansible 2.9+ for urlencode filter
+   python3 --version
+   # Python 3.x required (should be available in AAP execution environments)
    ```
 
 2. **Verify token is being passed correctly:**
@@ -286,7 +304,7 @@ This is informational only - the encoding is working correctly.
 
 - [RFC 3986 - URL Syntax](https://tools.ietf.org/html/rfc3986)
 - [Percent-encoding (Wikipedia)](https://en.wikipedia.org/wiki/Percent-encoding)
-- [Ansible urlencode filter](https://docs.ansible.com/ansible/latest/user_guide/playbooks_filters.html#url-filters)
+- [Python urllib.parse.quote()](https://docs.python.org/3/library/urllib.parse.html#urllib.parse.quote)
 
 ## Summary
 
