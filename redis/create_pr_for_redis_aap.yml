@@ -310,8 +310,10 @@
     
     - name: Extract Bitbucket host and port from repository URL
       ansible.builtin.set_fact:
-        bitbucket_host_with_port: "{{ git_repo_url | regex_replace('^https?://[^@]*@?([^/]+)/.*$', '\\1') | regex_replace('^git@([^:]+):.*$', '\\1') }}"
-        bitbucket_host: "{{ git_repo_url | regex_replace('^https?://[^@]*@?([^/:]+).*$', '\\1') | regex_replace('^git@([^:]+):.*$', '\\1') }}"
+        # For http://172.16.2.1:7990/scm/red/redis.git extract 172.16.2.1:7990
+        bitbucket_host_with_port: "{{ git_repo_url | regex_search('://([^/]+)/', '\\1') | first }}"
+        # Extract just the host without port: 172.16.2.1
+        bitbucket_host: "{{ git_repo_url | regex_search('://([^/:]+)', '\\1') | first }}"
       
     - name: Detect Bitbucket type (Cloud vs Server/Data Center)
       ansible.builtin.set_fact:
@@ -744,7 +746,9 @@
     - name: Extract repository path from URL (Bitbucket Server format - /scm/PROJECT/repo.git)
       ansible.builtin.set_fact:
         repo_path: "{{ git_repo_url | regex_replace('^https?://[^@]*@?[^/]+/(.*)$', '\\1') }}"
-        bitbucket_project: "{{ git_repo_url | regex_replace('^.*/scm/([^/]+)/.*$', '\\1') }}"
+        # Extract project key (red) and convert to uppercase (RED) for API calls
+        bitbucket_project: "{{ (git_repo_url | regex_replace('^.*/scm/([^/]+)/.*$', '\\1')).upper() }}"
+        # Extract repo slug (redis)
         bitbucket_repo_slug: "{{ git_repo_url | regex_replace('^.*/([^/]+)\\.git$', '\\1') | regex_replace('^.*/([^/]+)$', '\\1') }}"
       when:
         - bitbucket_username | default('') | length > 0
@@ -754,11 +758,15 @@
     - name: Display repository path for verification
       ansible.builtin.debug:
         msg:
-          - "Bitbucket Host: {{ bitbucket_host_with_port }}"
-          - "Repository Path: {{ repo_path }}"
-          - "{{ 'Project: ' + bitbucket_project if is_bitbucket_server else '' }}"
-          - "{{ 'Repository Slug: ' + bitbucket_repo_slug if is_bitbucket_server else '' }}"
-          - "Username: {{ bitbucket_username }}"
+          - "════════════════════════════════════════════════════════════════"
+          - "Repository Information:"
+          - "  Git URL: {{ git_repo_url }}"
+          - "  Bitbucket Host: {{ bitbucket_host_with_port }}"
+          - "  Repository Path: {{ repo_path if repo_path is defined else 'Not extracted' }}"
+          - "{{ '  Project Key: ' + bitbucket_project if is_bitbucket_server and bitbucket_project is defined else '' }}"
+          - "{{ '  Repository Slug: ' + bitbucket_repo_slug if is_bitbucket_server and bitbucket_repo_slug is defined else '' }}"
+          - "  Username: {{ bitbucket_username }}"
+          - "════════════════════════════════════════════════════════════════"
       when: 
         - bitbucket_username | default('') | length > 0
         - bitbucket_api_token | default('') | length > 0
